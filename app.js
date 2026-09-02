@@ -769,13 +769,13 @@ async function renderMaterialTable() {
   const { data } = await sb.from('materials').select('*').order('archived').order('name');
   $('#materialTable tbody').innerHTML = (data || []).map(m => `
     <tr class="border-t ${m.archived ? 'opacity-40' : ''}">
-      <td class="px-2 py-2 text-gray-400">${m.item_code || ''}</td>
-      <td class="px-2 py-2">${m.name}</td>
-      <td class="px-2 py-2 text-center">${m.unit}</td>
-      <td class="px-2 py-2 text-center">${money(m.unit_price)}</td>
-      <td class="px-2 py-2 text-center">${isGramTracked(m) ? money(pricePerBaseUnit(m)) + '/g' : '—'}</td>
-      <td class="px-2 py-2 text-center">${isGramTracked(m) ? formatWeight(m.reorder_threshold) : num(m.reorder_threshold)}</td>
-      <td class="px-2 py-2 text-center">${isGramTracked(m) ? formatWeight(m.opening_stock) : num(m.opening_stock)}</td>
+      <td class="px-3 py-2 text-gray-400 whitespace-nowrap">${m.item_code || ''}</td>
+      <td class="px-3 py-2">${m.name}</td>
+      <td class="px-3 py-2 text-center whitespace-nowrap">${m.unit}</td>
+      <td class="px-3 py-2 text-center whitespace-nowrap">${money(m.unit_price)}</td>
+      <td class="px-3 py-2 text-center whitespace-nowrap">${isGramTracked(m) ? money(pricePerBaseUnit(m)) + '/g' : '—'}</td>
+      <td class="px-3 py-2 text-center whitespace-nowrap">${isGramTracked(m) ? formatWeight(m.reorder_threshold) : num(m.reorder_threshold)}</td>
+      <td class="px-3 py-2 text-center whitespace-nowrap">${isGramTracked(m) ? formatWeight(m.opening_stock) : num(m.opening_stock)}</td>
       <td class="px-2 py-2 text-right whitespace-nowrap">
         <button class="text-teal-700 text-xs mr-2" onclick="editMaterial('${m.id}')">编辑</button>
         <button class="text-gray-400 text-xs" onclick="toggleArchiveMaterial('${m.id}', ${!m.archived})">${m.archived ? '恢复' : '归档'}</button>
@@ -825,11 +825,11 @@ async function renderProductTable() {
   const { data } = await sb.from('products').select('*').order('archived').order('name');
   $('#productTable tbody').innerHTML = (data || []).map(p => `
     <tr class="border-t ${p.archived ? 'opacity-40' : ''}">
-      <td class="px-2 py-2 text-gray-400">${p.item_code || ''}</td>
-      <td class="px-2 py-2">${p.name}</td>
-      <td class="px-2 py-2 text-center">${p.unit}</td>
-      <td class="px-2 py-2 text-center">${num(p.reorder_threshold)}</td>
-      <td class="px-2 py-2 text-center">${num(p.opening_stock)}</td>
+      <td class="px-3 py-2 text-gray-400 whitespace-nowrap">${p.item_code || ''}</td>
+      <td class="px-3 py-2">${p.name}</td>
+      <td class="px-3 py-2 text-center whitespace-nowrap">${p.unit}</td>
+      <td class="px-3 py-2 text-center whitespace-nowrap">${num(p.reorder_threshold)}</td>
+      <td class="px-3 py-2 text-center whitespace-nowrap">${num(p.opening_stock)}</td>
       <td class="px-2 py-2 text-right whitespace-nowrap">
         <button class="text-teal-700 text-xs mr-2" onclick="editProduct('${p.id}')">编辑</button>
         <button class="text-gray-400 text-xs" onclick="toggleArchiveProduct('${p.id}', ${!p.archived})">${p.archived ? '恢复' : '归档'}</button>
