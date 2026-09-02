@@ -19,6 +19,7 @@
   .tab-panel { display: none; }
   .tab-panel.active { display: block; }
   .subtab-btn.active { background: #0f766e; color: white; }
+  .lang-btn.active { background: #0f766e; color: white; border-color: #0f766e; }
   input, select, textarea { font-size: 16px; } /* 防止iOS自动缩放 */
   ::-webkit-scrollbar { height: 6px; width: 6px; }
 
@@ -42,21 +43,27 @@
 
 <div id="lockScreen" class="fixed inset-0 bg-white z-50 flex items-center justify-center p-6">
   <form id="lockForm" class="w-full max-w-xs space-y-3 text-center">
+    <div class="flex justify-center gap-2">
+      <button type="button" data-lang="zh" class="lang-btn text-xs px-2.5 py-1 rounded-full border border-gray-300 text-gray-600">中文</button>
+      <button type="button" data-lang="my" class="lang-btn text-xs px-2.5 py-1 rounded-full border border-gray-300 text-gray-600">မြန်မာ</button>
+      <button type="button" data-lang="id" class="lang-btn text-xs px-2.5 py-1 rounded-full border border-gray-300 text-gray-600">Indonesia</button>
+    </div>
     <div class="text-3xl">🔒</div>
-    <h2 class="text-lg font-semibold">请输入密码</h2>
-    <p class="text-xs text-gray-400">员工请输入员工密码;老板请输入老板密码查看全部功能</p>
+    <h2 class="text-lg font-semibold" data-i18n="lockTitle">请输入密码</h2>
+    <p class="text-xs text-gray-400" data-i18n="lockSubtitle">员工请输入员工密码;老板请输入老板密码查看全部功能</p>
     <input id="pinInput" type="tel" inputmode="numeric" autocomplete="off" class="w-full text-center text-2xl tracking-widest border rounded-lg px-3 py-3" placeholder="••••" />
     <p id="pinError" class="text-xs text-red-600 h-4"></p>
-    <button type="submit" class="w-full bg-teal-700 text-white rounded-lg py-2.5 font-medium">解锁</button>
+    <button type="submit" class="w-full bg-teal-700 text-white rounded-lg py-2.5 font-medium" data-i18n="lockUnlock">解锁</button>
   </form>
 </div>
 
-<header class="sticky top-0 z-20 bg-teal-700 text-white px-4 py-3 flex items-center justify-between shadow">
-  <h1 class="text-lg font-semibold" id="pageTitle">电子台账</h1>
-  <div class="flex items-center gap-2">
-    <span id="roleTag" class="text-xs px-2 py-1 rounded-full bg-teal-800 hidden"></span>
-    <span id="connStatus" class="text-xs px-2 py-1 rounded-full bg-teal-800">连接中…</span>
-    <button id="switchRoleBtn" class="text-xs px-2 py-1 rounded-full bg-teal-800 hidden">切换</button>
+<header class="sticky top-0 z-20 bg-teal-700 text-white px-3 py-2 flex items-center justify-between gap-2 shadow">
+  <h1 class="text-base font-semibold truncate" id="pageTitle" data-i18n="appTitle">电子台账</h1>
+  <div class="flex items-center gap-1 flex-wrap justify-end shrink-0">
+    <button id="langBtn" class="text-[11px] leading-none px-2 py-1 rounded-full bg-teal-800">🌐</button>
+    <span id="roleTag" class="text-[11px] leading-none px-2 py-1 rounded-full bg-teal-800 hidden"></span>
+    <span id="connStatus" class="text-[11px] leading-none px-2 py-1 rounded-full bg-teal-800">连接中…</span>
+    <button id="switchRoleBtn" class="text-[11px] leading-none px-2 py-1 rounded-full bg-teal-800 hidden" data-i18n="switchRole">切换</button>
   </div>
 </header>
 
@@ -65,87 +72,87 @@
   <!-- ============ 记录 ============ -->
   <section id="tab-record" class="tab-panel active">
     <div class="flex gap-2 mb-3 overflow-x-auto">
-      <button data-sub="consume" class="subtab-btn active whitespace-nowrap px-3 py-1.5 rounded-full border border-teal-700 text-teal-700 text-sm">原材料消耗</button>
-      <button data-sub="produce" class="subtab-btn whitespace-nowrap px-3 py-1.5 rounded-full border border-teal-700 text-teal-700 text-sm">生产记录</button>
-      <button data-sub="ship" class="subtab-btn whitespace-nowrap px-3 py-1.5 rounded-full border border-teal-700 text-teal-700 text-sm">出货记录</button>
-      <button data-sub="purchase" class="subtab-btn whitespace-nowrap px-3 py-1.5 rounded-full border border-teal-700 text-teal-700 text-sm">原材料入库</button>
+      <button data-sub="consume" class="subtab-btn active whitespace-nowrap px-3 py-1.5 rounded-full border border-teal-700 text-teal-700 text-sm" data-i18n="subConsume">原材料消耗</button>
+      <button data-sub="produce" class="subtab-btn whitespace-nowrap px-3 py-1.5 rounded-full border border-teal-700 text-teal-700 text-sm" data-i18n="subProduce">生产记录</button>
+      <button data-sub="ship" class="subtab-btn whitespace-nowrap px-3 py-1.5 rounded-full border border-teal-700 text-teal-700 text-sm" data-i18n="subShip">出货记录</button>
+      <button data-sub="purchase" class="subtab-btn whitespace-nowrap px-3 py-1.5 rounded-full border border-teal-700 text-teal-700 text-sm" data-i18n="subPurchase">原材料入库</button>
     </div>
 
     <!-- 消耗 -->
     <form id="form-consume" class="record-form space-y-3 bg-white rounded-xl p-4 shadow-sm">
       <div>
-        <label class="text-sm text-gray-500">原材料</label>
+        <label class="text-sm text-gray-500" data-i18n="lblMaterial">原材料</label>
         <select name="material_id" required class="w-full mt-1 border rounded-lg px-3 py-2"></select>
       </div>
       <div>
-        <label class="text-sm text-gray-500">数量 <span id="consumeQtyUnit" class="text-teal-700 font-medium"></span></label>
+        <label class="text-sm text-gray-500"><span data-i18n="lblQty">数量</span> <span id="consumeQtyUnit" class="text-teal-700 font-medium"></span></label>
         <input name="qty" type="number" step="any" min="0" required class="w-full mt-1 border rounded-lg px-3 py-2" placeholder="0" />
       </div>
       <div>
-        <label class="text-sm text-gray-500">照片</label>
+        <label class="text-sm text-gray-500" data-i18n="lblPhoto">照片</label>
         <input name="photo" type="file" accept="image/*" capture="environment" class="w-full mt-1 text-sm" />
       </div>
       <div>
-        <label class="text-sm text-gray-500">备注</label>
+        <label class="text-sm text-gray-500" data-i18n="lblNote">备注</label>
         <textarea name="note" class="w-full mt-1 border rounded-lg px-3 py-2" rows="2"></textarea>
       </div>
-      <button type="submit" class="w-full bg-teal-700 text-white rounded-lg py-2.5 font-medium">提交消耗记录</button>
+      <button type="submit" class="w-full bg-teal-700 text-white rounded-lg py-2.5 font-medium" data-i18n="btnSubmitConsume">提交消耗记录</button>
     </form>
 
     <!-- 生产 -->
     <form id="form-produce" class="record-form hidden space-y-3 bg-white rounded-xl p-4 shadow-sm">
       <div>
-        <label class="text-sm text-gray-500">产品</label>
+        <label class="text-sm text-gray-500" data-i18n="lblProduct">产品</label>
         <select name="product_id" required class="w-full mt-1 border rounded-lg px-3 py-2"></select>
       </div>
       <div>
-        <label class="text-sm text-gray-500">数量</label>
+        <label class="text-sm text-gray-500" data-i18n="lblQty">数量</label>
         <input name="qty" type="number" step="any" min="0" required class="w-full mt-1 border rounded-lg px-3 py-2" placeholder="0" />
       </div>
       <div>
-        <label class="text-sm text-gray-500">照片</label>
+        <label class="text-sm text-gray-500" data-i18n="lblPhoto">照片</label>
         <input name="photo" type="file" accept="image/*" capture="environment" class="w-full mt-1 text-sm" />
       </div>
       <div>
-        <label class="text-sm text-gray-500">备注</label>
+        <label class="text-sm text-gray-500" data-i18n="lblNote">备注</label>
         <textarea name="note" class="w-full mt-1 border rounded-lg px-3 py-2" rows="2"></textarea>
       </div>
-      <button type="submit" class="w-full bg-teal-700 text-white rounded-lg py-2.5 font-medium">提交生产记录</button>
+      <button type="submit" class="w-full bg-teal-700 text-white rounded-lg py-2.5 font-medium" data-i18n="btnSubmitProduce">提交生产记录</button>
     </form>
 
     <!-- 出货 -->
     <form id="form-ship" class="record-form hidden space-y-3 bg-white rounded-xl p-4 shadow-sm">
       <div>
-        <label class="text-sm text-gray-500">产品</label>
+        <label class="text-sm text-gray-500" data-i18n="lblProduct">产品</label>
         <select name="product_id" required class="w-full mt-1 border rounded-lg px-3 py-2"></select>
       </div>
       <div>
-        <label class="text-sm text-gray-500">数量</label>
+        <label class="text-sm text-gray-500" data-i18n="lblQty">数量</label>
         <input name="qty" type="number" step="any" min="0" required class="w-full mt-1 border rounded-lg px-3 py-2" placeholder="0" />
       </div>
       <div>
-        <label class="text-sm text-gray-500">发往哪里</label>
-        <input name="destination" type="text" class="w-full mt-1 border rounded-lg px-3 py-2" placeholder="选填" />
+        <label class="text-sm text-gray-500" data-i18n="lblDestination">发往哪里</label>
+        <input name="destination" type="text" class="w-full mt-1 border rounded-lg px-3 py-2" data-i18n-ph="phOptional" placeholder="选填" />
       </div>
       <div>
-        <label class="text-sm text-gray-500">照片</label>
+        <label class="text-sm text-gray-500" data-i18n="lblPhoto">照片</label>
         <input name="photo" type="file" accept="image/*" capture="environment" class="w-full mt-1 text-sm" />
       </div>
       <div>
-        <label class="text-sm text-gray-500">备注</label>
+        <label class="text-sm text-gray-500" data-i18n="lblNote">备注</label>
         <textarea name="note" class="w-full mt-1 border rounded-lg px-3 py-2" rows="2"></textarea>
       </div>
-      <button type="submit" class="w-full bg-teal-700 text-white rounded-lg py-2.5 font-medium">提交出货记录</button>
+      <button type="submit" class="w-full bg-teal-700 text-white rounded-lg py-2.5 font-medium" data-i18n="btnSubmitShip">提交出货记录</button>
     </form>
 
     <!-- 采购/入库 -->
     <form id="form-purchase" class="record-form hidden space-y-3 bg-white rounded-xl p-4 shadow-sm">
       <div>
-        <label class="text-sm text-gray-500">原材料</label>
+        <label class="text-sm text-gray-500" data-i18n="lblMaterial">原材料</label>
         <select name="material_id" required class="w-full mt-1 border rounded-lg px-3 py-2"></select>
       </div>
       <div>
-        <label class="text-sm text-gray-500">入库数量 <span id="purchaseQtyUnit" class="text-teal-700 font-medium"></span></label>
+        <label class="text-sm text-gray-500"><span data-i18n="lblPurchaseQty">入库数量</span> <span id="purchaseQtyUnit" class="text-teal-700 font-medium"></span></label>
         <input name="qty" type="number" step="any" min="0" required class="w-full mt-1 border rounded-lg px-3 py-2" placeholder="0" />
         <p id="purchaseConvertHint" class="text-xs text-gray-400 mt-1"></p>
       </div>
@@ -154,18 +161,18 @@
         <input name="unit_price" type="number" step="any" min="0" class="w-full mt-1 border rounded-lg px-3 py-2" placeholder="留空使用原材料库中的单价" />
       </div>
       <div>
-        <label class="text-sm text-gray-500">照片</label>
+        <label class="text-sm text-gray-500" data-i18n="lblPhoto">照片</label>
         <input name="photo" type="file" accept="image/*" capture="environment" class="w-full mt-1 text-sm" />
       </div>
       <div>
-        <label class="text-sm text-gray-500">备注</label>
+        <label class="text-sm text-gray-500" data-i18n="lblNote">备注</label>
         <textarea name="note" class="w-full mt-1 border rounded-lg px-3 py-2" rows="2"></textarea>
       </div>
-      <button type="submit" class="w-full bg-teal-700 text-white rounded-lg py-2.5 font-medium">提交入库记录</button>
+      <button type="submit" class="w-full bg-teal-700 text-white rounded-lg py-2.5 font-medium" data-i18n="btnSubmitPurchase">提交入库记录</button>
     </form>
 
     <div class="mt-4">
-      <h3 class="text-sm font-medium text-gray-500 mb-2">最近记录</h3>
+      <h3 class="text-sm font-medium text-gray-500 mb-2" data-i18n="recentTitle">最近记录</h3>
       <div id="recentList" class="space-y-2"></div>
     </div>
   </section>
@@ -319,7 +326,7 @@
 
 <nav class="fixed bottom-0 inset-x-0 bg-white border-t flex justify-around py-1.5 z-20">
   <button data-tab="record" class="nav-btn active flex flex-col items-center text-xs text-gray-500 px-2 py-1">
-    <span class="nav-icon text-lg">📝</span>记录</button>
+    <span class="nav-icon text-lg">📝</span><span data-i18n="navRecord">记录</span></button>
   <button data-tab="stock" class="nav-btn flex flex-col items-center text-xs text-gray-500 px-2 py-1">
     <span class="nav-icon text-lg">📦</span>库存</button>
   <button data-tab="cost" class="nav-btn flex flex-col items-center text-xs text-gray-500 px-2 py-1">

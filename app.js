@@ -14,6 +14,79 @@ let lastDaily = null; // 最近一次日报数据,供导出 PDF/CSV 使用
 function $(sel, root = document) { return root.querySelector(sel); }
 function $all(sel, root = document) { return [...root.querySelectorAll(sel)]; }
 
+// -------------------- 多语言(仅覆盖员工能看到的界面:解锁页 + 记录页) --------------------
+const LANGS = ['zh', 'my', 'id'];
+const LANG_LABELS = { zh: '中文', my: 'မြန်မာ', id: 'Indonesia' };
+let lang = 'zh';
+const I18N = {
+  lockTitle: { zh: '请输入密码', my: 'စကားဝှက် ရိုက်ထည့်ပါ', id: 'Masukkan kata sandi' },
+  lockSubtitle: { zh: '员工请输入员工密码;老板请输入老板密码查看全部功能', my: 'အလုပ်သမားစကားဝှက် ထည့်ပါ။ ပိုင်ရှင်/မန်နေဂျာဖြစ်ပါက လုပ်ဆောင်ချက်အားလုံးကြည့်ရန် စကားဝှက်အပြည့်အစုံ ထည့်ပါ', id: 'Karyawan masukkan kata sandi karyawan; pemilik masukkan kata sandi pemilik untuk melihat semua fitur' },
+  lockError: { zh: '密码不对,再试一次', my: 'စကားဝှက် မှားနေပါသည်၊ ထပ်ကြိုးစားပါ', id: 'Kata sandi salah, coba lagi' },
+  lockUnlock: { zh: '解锁', my: 'ဖွင့်ရန်', id: 'Buka' },
+  appTitle: { zh: '电子台账', my: 'အီလက်ထရွောနစ် မှတ်တမ်း', id: 'Buku Catatan Digital' },
+  connConnecting: { zh: '连接中…', my: 'ချိတ်ဆက်နေသည်…', id: 'Menyambungkan…' },
+  connConnected: { zh: '已连接', my: 'ချိတ်ဆက်ပြီးပါပြီ', id: 'Tersambung' },
+  connNotConfigured: { zh: '未配置', my: 'စနစ် မသတ်မှတ်ရသေးပါ', id: 'Belum diatur' },
+  roleBoss: { zh: '老板模式', my: 'ပိုင်ရှင် မုဒ်', id: 'Mode Pemilik' },
+  roleManager: { zh: '经理模式', my: 'မန်နေဂျာ မုဒ်', id: 'Mode Manajer' },
+  roleStaff: { zh: '员工模式', my: 'ဝန်ထမ်း မုဒ်', id: 'Mode Karyawan' },
+  switchRole: { zh: '切换', my: 'ပြောင်းရန်', id: 'Ganti' },
+  navRecord: { zh: '记录', my: 'မှတ်တမ်း', id: 'Catatan' },
+  subConsume: { zh: '原材料消耗', my: 'ကုန်ကြမ်းသုံးမှု', id: 'Pakai Bahan' },
+  subProduce: { zh: '生产记录', my: 'ထုတ်လုပ်မှု', id: 'Produksi' },
+  subShip: { zh: '出货记录', my: 'ကုန်ပို့မှု', id: 'Pengiriman' },
+  subPurchase: { zh: '原材料入库', my: 'ကုန်သွင်းမှု', id: 'Terima Bahan' },
+  lblMaterial: { zh: '原材料', my: 'ကုန်ကြမ်းပစ္စည်း', id: 'Bahan Baku' },
+  lblProduct: { zh: '产品', my: 'ကုန်ချောပစ္စည်း', id: 'Produk' },
+  lblQty: { zh: '数量', my: 'အရေအတွက်', id: 'Jumlah' },
+  lblPurchaseQty: { zh: '入库数量', my: 'သွင်းယူသော အရေအတွက်', id: 'Jumlah Diterima' },
+  lblDestination: { zh: '发往哪里', my: 'ဘယ်နေရာကို ပို့မလဲ', id: 'Dikirim ke mana' },
+  lblPhoto: { zh: '照片', my: 'ဓာတ်ပုံ', id: 'Foto' },
+  lblNote: { zh: '备注', my: 'မှတ်ချက်', id: 'Catatan' },
+  phOptional: { zh: '选填', my: 'မဖြည့်လည်းရ', id: 'opsional' },
+  btnSubmitConsume: { zh: '提交消耗记录', my: 'မှတ်တမ်းပို့ရန်', id: 'Kirim' },
+  btnSubmitProduce: { zh: '提交生产记录', my: 'မှတ်တမ်းပို့ရန်', id: 'Kirim' },
+  btnSubmitShip: { zh: '提交出货记录', my: 'မှတ်တမ်းပို့ရန်', id: 'Kirim' },
+  btnSubmitPurchase: { zh: '提交入库记录', my: 'မှတ်တမ်းပို့ရန်', id: 'Kirim' },
+  recentTitle: { zh: '最近记录', my: 'မကြာသေးမီက မှတ်တမ်းများ', id: 'Catatan Terbaru' },
+  recentEmpty: { zh: '还没有记录', my: 'မှတ်တမ်း မရှိသေးပါ', id: 'Belum ada catatan' },
+  loadingText: { zh: '加载中…', my: 'ဖွင့်နေသည်…', id: 'Memuat…' },
+  toastSubmitted: { zh: '已提交', my: 'ပို့ပြီးပါပြီ', id: 'Berhasil dikirim' },
+  toastUploadingPhoto: { zh: '上传照片中…', my: 'ဓာတ်ပုံ တင်နေသည်…', id: 'Mengunggah foto…' },
+  toastSubmitting: { zh: '提交中…', my: 'ပို့နေသည်…', id: 'Mengirim…' },
+  selectNoMaterial: { zh: '(请先在设置中添加原材料)', my: '(ကျေးဇူးပြု၍ ကုန်ကြမ်းပစ္စည်း အရင်ထည့်ပါ)', id: '(Tambahkan bahan baku di Pengaturan dulu)' },
+  selectNoProduct: { zh: '(请先在设置中添加产品)', my: '(ကျေးဇူးပြု၍ ကုန်ချောပစ္စည်း အရင်ထည့်ပါ)', id: '(Tambahkan produk di Pengaturan dulu)' }
+};
+function t(key) { return (I18N[key] && I18N[key][lang]) || (I18N[key] && I18N[key].zh) || key; }
+
+let connState = 'connecting'; // 'connecting' | 'connected' | 'not_configured'
+function updateConnStatusText() {
+  // 连上了就把这个徽章收起来,省地方;没连上/出错才提示
+  $('#connStatus').classList.toggle('hidden', connState === 'connected');
+  if (connState === 'connected') return;
+  const key = connState === 'not_configured' ? 'connNotConfigured' : 'connConnecting';
+  $('#connStatus').textContent = t(key);
+}
+
+function applyI18n() {
+  $all('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+  $all('[data-i18n-ph]').forEach(el => { el.placeholder = t(el.dataset.i18nPh); });
+  $all('.lang-btn').forEach(b => b.classList.toggle('active', b.dataset.lang === lang));
+  updateConnStatusText();
+}
+
+function setLang(l) {
+  if (!LANGS.includes(l)) return;
+  lang = l;
+  safeStorage.set('ledger_lang', l);
+  applyI18n();
+  if (currentRole) applyRole(currentRole); // 刷新 roleTag 文字
+  if (sb && $('#tab-record').classList.contains('active')) renderRecent(); // 刷新"最近记录"里动态生成的文字
+}
+
+$all('.lang-btn').forEach(b => b.addEventListener('click', () => setLang(b.dataset.lang)));
+$('#langBtn').addEventListener('click', () => setLang(LANGS[(LANGS.indexOf(lang) + 1) % LANGS.length]));
+
 function toast(msg, isError = false) {
   const el = $('#toast');
   el.textContent = msg;
@@ -68,8 +141,21 @@ function fmtTime(iso) {
 }
 
 // -------------------- 身份(PIN 锁,仅界面层面) --------------------
-let currentRole = null; // 'boss' | 'staff'
+let currentRole = null; // 'boss' | 'manager' | 'staff'
 const STAFF_ALLOWED_TABS = ['record'];
+const ROLE_I18N_KEYS = { boss: 'roleBoss', manager: 'roleManager', staff: 'roleStaff' };
+function canDelete() { return currentRole === 'boss' || currentRole === 'manager'; }
+
+// 删除一条记录(消耗/生产/出货/入库通用)。只有老板/经理能点到这个按钮,
+// 但接口本身没有强制权限(见 README 安全性说明),这里再做一次前端拦截防误触。
+window.deleteRecord = async function (table, id, refresh) {
+  if (!canDelete()) return;
+  if (!confirm('确定要删除这条记录吗?删除后无法恢复,库存和成本会立刻按删除后重新计算。')) return;
+  const { error } = await sb.from(table).delete().eq('id', id);
+  if (error) { toast('删除失败: ' + error.message, true); return; }
+  toast('已删除');
+  if (refresh === 'daily') renderDaily(); else renderRecent();
+};
 
 // 有些浏览器(比如 iOS Safari 开了"阻止所有 Cookie")会让 localStorage 直接抛错,
 // 这里包一层,读写失败就退化成"这次打开先不记住身份",不让整个解锁流程卡死。
@@ -84,7 +170,7 @@ function applyRole(role) {
   const isStaff = role === 'staff';
   $all('.nav-btn').forEach(b => { b.classList.toggle('hidden', isStaff && !STAFF_ALLOWED_TABS.includes(b.dataset.tab)); });
   $('#purchasePriceField')?.classList.toggle('hidden', isStaff);
-  $('#roleTag').textContent = isStaff ? '员工模式' : '老板模式';
+  $('#roleTag').textContent = t(ROLE_I18N_KEYS[role]) || role;
   $('#roleTag').classList.remove('hidden');
   $('#switchRoleBtn').classList.remove('hidden');
   if (isStaff) switchTab('record');
@@ -101,8 +187,9 @@ $('#lockForm').addEventListener('submit', e => {
   const pin = $('#pinInput').value.trim();
   const pins = CFG.PINS || {};
   if (pin && pin === pins.boss) { unlock('boss'); return; }
+  if (pin && pin === pins.manager) { unlock('manager'); return; }
   if (pin && pin === pins.staff) { unlock('staff'); return; }
-  $('#pinError').textContent = '密码不对,再试一次';
+  $('#pinError').textContent = t('lockError');
   $('#pinInput').value = '';
   $('#pinInput').focus();
 });
@@ -114,7 +201,7 @@ $('#switchRoleBtn').addEventListener('click', () => {
 
 function initRoleGate() {
   const saved = safeStorage.get('ledger_role');
-  if (saved === 'boss' || saved === 'staff') {
+  if (saved === 'boss' || saved === 'manager' || saved === 'staff') {
     $('#lockScreen').classList.add('hidden');
     applyRole(saved);
   } else {
@@ -126,13 +213,15 @@ function initRoleGate() {
 // -------------------- 初始化 --------------------
 function initSupabase() {
   if (!CFG.SUPABASE_URL || CFG.SUPABASE_URL.includes('YOUR-PROJECT')) {
-    $('#connStatus').textContent = '未配置';
+    connState = 'not_configured';
+    updateConnStatusText();
     $('#connStatus').classList.add('bg-red-800');
     toast('请先在 config.js 里填入你的 Supabase 项目信息', true);
     return false;
   }
   sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY);
-  $('#connStatus').textContent = '已连接';
+  connState = 'connected';
+  updateConnStatusText();
   return true;
 }
 
@@ -141,7 +230,7 @@ async function loadMaterials() {
   if (error) { toast('读取原材料库失败: ' + error.message, true); return; }
   materials = data || [];
   const opts = materials.map(m => `<option value="${m.id}">${m.item_code ? m.item_code + ' ' : ''}${m.name}(${m.unit})</option>`).join('');
-  $all('select[name="material_id"]').forEach(sel => { sel.innerHTML = opts || '<option value="">(请先在设置中添加原材料)</option>'; });
+  $all('select[name="material_id"]').forEach(sel => { sel.innerHTML = opts || `<option value="">${t('selectNoMaterial')}</option>`; });
   updateConsumeQtyUnit();
   updatePurchaseQtyUnit();
 }
@@ -151,7 +240,7 @@ async function loadProducts() {
   if (error) { toast('读取产品库失败: ' + error.message, true); return; }
   products = data || [];
   const opts = products.map(p => `<option value="${p.id}">${p.item_code ? p.item_code + ' ' : ''}${p.name}(${p.unit})</option>`).join('');
-  $all('select[name="product_id"]').forEach(sel => { sel.innerHTML = opts || '<option value="">(请先在设置中添加产品)</option>'; });
+  $all('select[name="product_id"]').forEach(sel => { sel.innerHTML = opts || `<option value="">${t('selectNoProduct')}</option>`; });
 }
 
 function materialName(id) { const m = materials.find(x => x.id === id); return m ? m.name : '(已删除的原材料)'; }
@@ -174,7 +263,7 @@ function updatePurchaseQtyUnit() {
   const priceUnitEl = $('#purchasePriceUnit');
   if (!sel || !unitEl) return;
   const m = selectedMaterial(sel);
-  unitEl.textContent = m ? `(按 ${m.unit} 计)` : '';
+  unitEl.textContent = m ? `(${m.unit})` : '';
   if (priceUnitEl) priceUnitEl.textContent = m ? ` (每 ${m.unit})` : '';
   updatePurchaseConvertHint();
 }
@@ -205,7 +294,7 @@ function switchTab(tab) {
   $all('.tab-panel').forEach(p => p.classList.remove('active'));
   $(`#tab-${tab}`).classList.add('active');
   $all('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  $('#pageTitle').textContent = TAB_TITLES[tab] || '电子台账';
+  $('#pageTitle').textContent = tab === 'record' ? t('navRecord') : (TAB_TITLES[tab] || t('appTitle'));
   if (!sb) return; // 尚未配置 Supabase,不再往下发请求
   if (tab === 'stock') renderStock();
   if (tab === 'cost') renderCost();
@@ -249,18 +338,18 @@ async function handleRecordSubmit(e, table, buildRow) {
   const fd = new FormData(form);
   btn.disabled = true;
   const originalText = btn.textContent;
-  btn.textContent = '提交中…';
+  btn.textContent = t('toastSubmitting');
   try {
     let photoUrl = null;
     const file = fd.get('photo');
     if (file && file.size > 0) {
-      btn.textContent = '上传照片中…';
+      btn.textContent = t('toastUploadingPhoto');
       photoUrl = await uploadPhoto(file);
     }
     const row = buildRow(fd, photoUrl);
     const { error } = await sb.from(table).insert(row);
     if (error) throw error;
-    toast('已提交');
+    toast(t('toastSubmitted'));
     form.reset();
     if (form.id === 'form-consume') updateConsumeQtyUnit();
     if (form.id === 'form-purchase') updatePurchaseQtyUnit();
@@ -316,7 +405,7 @@ $('#form-purchase').addEventListener('submit', e => handleRecordSubmit(e, 'mater
 // -------------------- 最近记录 --------------------
 async function renderRecent() {
   const box = $('#recentList');
-  box.innerHTML = '<p class="text-sm text-gray-400">加载中…</p>';
+  box.innerHTML = `<p class="text-sm text-gray-400">${t('loadingText')}</p>`;
   const [c, p, s, pu] = await Promise.all([
     sb.from('material_consumptions').select('*').order('created_at', { ascending: false }).limit(5),
     sb.from('production_records').select('*').order('created_at', { ascending: false }).limit(5),
@@ -324,13 +413,13 @@ async function renderRecent() {
     sb.from('material_purchases').select('*').order('created_at', { ascending: false }).limit(5)
   ]);
   const items = [
-    ...(c.data || []).map(r => { const m = materials.find(x => x.id === r.material_id); return { ...r, kind: '消耗', label: materialName(r.material_id), qtyLabel: isGramTracked(m) ? formatWeight(r.qty) : num(r.qty) }; }),
-    ...(p.data || []).map(r => ({ ...r, kind: '生产', label: productName(r.product_id), qtyLabel: num(r.qty) })),
-    ...(s.data || []).map(r => ({ ...r, kind: '出货', label: productName(r.product_id), qtyLabel: num(r.qty) })),
-    ...(pu.data || []).map(r => { const m = materials.find(x => x.id === r.material_id); return { ...r, kind: '入库', label: materialName(r.material_id), qtyLabel: num(r.qty) + (m ? ' ' + m.unit : '') }; })
+    ...(c.data || []).map(r => { const m = materials.find(x => x.id === r.material_id); return { ...r, kind: t('subConsume'), label: materialName(r.material_id), qtyLabel: isGramTracked(m) ? formatWeight(r.qty) : num(r.qty), table: 'material_consumptions' }; }),
+    ...(p.data || []).map(r => ({ ...r, kind: t('subProduce'), label: productName(r.product_id), qtyLabel: num(r.qty), table: 'production_records' })),
+    ...(s.data || []).map(r => ({ ...r, kind: t('subShip'), label: productName(r.product_id), qtyLabel: num(r.qty), table: 'shipment_records' })),
+    ...(pu.data || []).map(r => { const m = materials.find(x => x.id === r.material_id); return { ...r, kind: t('subPurchase'), label: materialName(r.material_id), qtyLabel: num(r.qty) + (m ? ' ' + m.unit : ''), table: 'material_purchases' }; })
   ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 10);
 
-  if (!items.length) { box.innerHTML = '<p class="text-sm text-gray-400">还没有记录</p>'; return; }
+  if (!items.length) { box.innerHTML = `<p class="text-sm text-gray-400">${t('recentEmpty')}</p>`; return; }
   box.innerHTML = items.map(it => `
     <div class="flex items-center gap-3 bg-white rounded-lg p-2.5 shadow-sm">
       ${it.photo_url ? `<a href="${it.photo_url}" target="_blank"><img src="${it.photo_url}" class="w-12 h-12 object-cover rounded-md" /></a>` : `<div class="w-12 h-12 rounded-md bg-gray-100 flex items-center justify-center text-gray-300 text-xs">无图</div>`}
@@ -339,6 +428,7 @@ async function renderRecent() {
         <div class="text-xs text-gray-400">${fmtTime(it.created_at)}${it.note ? ' · ' + it.note : ''}</div>
       </div>
       <div class="text-sm font-semibold text-teal-700">${it.qtyLabel}</div>
+      ${canDelete() ? `<button class="text-red-600 text-xs px-1" onclick="deleteRecord('${it.table}','${it.id}','recent')">删除</button>` : ''}
     </div>
   `).join('');
 }
@@ -441,6 +531,7 @@ async function renderDaily() {
       <h3 class="font-medium mb-2">${title} <span class="text-gray-400 text-sm">(${rows.length})</span></h3>
       ${rows.length ? `<div class="space-y-1.5 text-sm">${rows.map(render).join('')}</div>` : '<p class="text-sm text-gray-400">无记录</p>'}
     </div>`;
+  const delBtn = (table, id) => canDelete() ? `<button class="text-red-600 text-xs ml-2" onclick="deleteRecord('${table}','${id}','daily')">删除</button>` : '';
 
   $('#dailyReport').innerHTML = `
     <div class="grid grid-cols-2 gap-3">
@@ -453,10 +544,10 @@ async function renderDaily() {
         <div class="text-lg font-semibold text-teal-700">${p.data.length} / ${s.data.length}</div>
       </div>
     </div>
-    ${section('原材料消耗', c.data || [], r => { const m = materials.find(x => x.id === r.material_id); return `<div class="flex justify-between border-b pb-1"><span>${materialName(r.material_id)}${r.note ? ' · ' + r.note : ''}</span><span>${isGramTracked(m) ? formatWeight(r.qty) : num(r.qty)}</span></div>`; })}
-    ${section('生产记录', p.data || [], r => `<div class="flex justify-between border-b pb-1"><span>${productName(r.product_id)}${r.note ? ' · ' + r.note : ''}</span><span>${num(r.qty)}</span></div>`)}
-    ${section('出货记录', s.data || [], r => `<div class="flex justify-between border-b pb-1"><span>${productName(r.product_id)}${r.destination ? ' → ' + r.destination : ''}</span><span>${num(r.qty)}</span></div>`)}
-    ${section('原材料入库', pu.data || [], r => { const m = materials.find(x => x.id === r.material_id); return `<div class="flex justify-between border-b pb-1"><span>${materialName(r.material_id)}${r.note ? ' · ' + r.note : ''}</span><span>${num(r.qty)} ${m ? m.unit : ''}</span></div>`; })}
+    ${section('原材料消耗', c.data || [], r => { const m = materials.find(x => x.id === r.material_id); return `<div class="flex justify-between items-center border-b pb-1"><span>${materialName(r.material_id)}${r.note ? ' · ' + r.note : ''}</span><span>${isGramTracked(m) ? formatWeight(r.qty) : num(r.qty)}${delBtn('material_consumptions', r.id)}</span></div>`; })}
+    ${section('生产记录', p.data || [], r => `<div class="flex justify-between items-center border-b pb-1"><span>${productName(r.product_id)}${r.note ? ' · ' + r.note : ''}</span><span>${num(r.qty)}${delBtn('production_records', r.id)}</span></div>`)}
+    ${section('出货记录', s.data || [], r => `<div class="flex justify-between items-center border-b pb-1"><span>${productName(r.product_id)}${r.destination ? ' → ' + r.destination : ''}</span><span>${num(r.qty)}${delBtn('shipment_records', r.id)}</span></div>`)}
+    ${section('原材料入库', pu.data || [], r => { const m = materials.find(x => x.id === r.material_id); return `<div class="flex justify-between items-center border-b pb-1"><span>${materialName(r.material_id)}${r.note ? ' · ' + r.note : ''}</span><span>${num(r.qty)} ${m ? m.unit : ''}${delBtn('material_purchases', r.id)}</span></div>`; })}
     <div class="bg-white rounded-xl p-4 shadow-sm">
       <h3 class="font-medium mb-2">当日结束库存快照</h3>
       <div class="text-sm space-y-1">
@@ -774,6 +865,9 @@ $('#productForm').addEventListener('submit', async e => {
 
 // -------------------- 启动 --------------------
 (async function start() {
+  const savedLang = safeStorage.get('ledger_lang');
+  if (LANGS.includes(savedLang)) lang = savedLang;
+  applyI18n();
   initRoleGate();
   if (!initSupabase()) return;
   $('#dailyDate').value = todayStr();
