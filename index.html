@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>电子台账</title>
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#0f766e" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="台账" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<style>
+  body { -webkit-tap-highlight-color: transparent; }
+  .nav-btn.active { color: #0f766e; }
+  .nav-btn.active .nav-icon { transform: translateY(-2px); }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+  .subtab-btn.active { background: #0f766e; color: white; }
+  input, select, textarea { font-size: 16px; } /* 防止iOS自动缩放 */
+  ::-webkit-scrollbar { height: 6px; width: 6px; }
+</style>
+</head>
+<body class="bg-gray-50 text-gray-800 min-h-screen pb-20">
+
+<header class="sticky top-0 z-20 bg-teal-700 text-white px-4 py-3 flex items-center justify-between shadow">
+  <h1 class="text-lg font-semibold" id="pageTitle">电子台账</h1>
+  <span id="connStatus" class="text-xs px-2 py-1 rounded-full bg-teal-800">连接中…</span>
+</header>
+
+<main class="max-w-xl mx-auto p-3 pb-24">
+
+  <!-- ============ 记录 ============ -->
+  <section id="tab-record" class="tab-panel active">
+    <div class="flex gap-2 mb-3 overflow-x-auto">
+      <button data-sub="consume" class="subtab-btn active whitespace-nowrap px-3 py-1.5 rounded-full border border-teal-700 text-teal-700 text-sm">原材料消耗</button>
+      <button data-sub="produce" class="subtab-btn whitespace-nowrap px-3 py-1.5 rounded-full border border-teal-700 text-teal-700 text-sm">生产记录</button>
+      <button data-sub="ship" class="subtab-btn whitespace-nowrap px-3 py-1.5 rounded-full border border-teal-700 text-teal-700 text-sm">出货记录</button>
+      <button data-sub="purchase" class="subtab-btn whitespace-nowrap px-3 py-1.5 rounded-full border border-teal-700 text-teal-700 text-sm">原材料入库</button>
+    </div>
+
+    <!-- 消耗 -->
+    <form id="form-consume" class="record-form space-y-3 bg-white rounded-xl p-4 shadow-sm">
+      <div>
+        <label class="text-sm text-gray-500">原材料</label>
+        <select name="material_id" required class="w-full mt-1 border rounded-lg px-3 py-2"></select>
+      </div>
+      <div>
+        <label class="text-sm text-gray-500">数量</label>
+        <input name="qty" type="number" step="any" min="0" required class="w-full mt-1 border rounded-lg px-3 py-2" placeholder="0" />
+      </div>
+      <div>
+        <label class="text-sm text-gray-500">照片</label>
+        <input name="photo" type="file" accept="image/*" capture="environment" class="w-full mt-1 text-sm" />
+      </div>
+      <div>
+        <label class="text-sm text-gray-500">备注</label>
+        <textarea name="note" class="w-full mt-1 border rounded-lg px-3 py-2" rows="2"></textarea>
+      </div>
+      <button type="submit" class="w-full bg-teal-700 text-white rounded-lg py-2.5 font-medium">提交消耗记录</button>
+    </form>
+
+    <!-- 生产 -->
+    <form id="form-produce" class="record-form hidden space-y-3 bg-white rounded-xl p-4 shadow-sm">
+      <div>
+        <label class="text-sm text-gray-500">产品</label>
+        <select name="product_id" required class="w-full mt-1 border rounded-lg px-3 py-2"></select>
+      </div>
+      <div>
+        <label class="text-sm text-gray-500">数量</label>
+        <input name="qty" type="number" step="any" min="0" required class="w-full mt-1 border rounded-lg px-3 py-2" placeholder="0" />
+      </div>
+      <div>
+        <label class="text-sm text-gray-500">照片</label>
+        <input name="photo" type="file" accept="image/*" capture="environment" class="w-full mt-1 text-sm" />
+      </div>
+      <div>
+        <label class="text-sm text-gray-500">备注</label>
+        <textarea name="note" class="w-full mt-1 border rounded-lg px-3 py-2" rows="2"></textarea>
+      </div>
+      <button type="submit" class="w-full bg-teal-700 text-white rounded-lg py-2.5 font-medium">提交生产记录</button>
+    </form>
+
+    <!-- 出货 -->
+    <form id="form-ship" class="record-form hidden space-y-3 bg-white rounded-xl p-4 shadow-sm">
+      <div>
+        <label class="text-sm text-gray-500">产品</label>
+        <select name="product_id" required class="w-full mt-1 border rounded-lg px-3 py-2"></select>
+      </div>
+      <div>
+        <label class="text-sm text-gray-500">数量</label>
+        <input name="qty" type="number" step="any" min="0" required class="w-full mt-1 border rounded-lg px-3 py-2" placeholder="0" />
+      </div>
+      <div>
+        <label class="text-sm text-gray-500">发往哪里</label>
+        <input name="destination" type="text" class="w-full mt-1 border rounded-lg px-3 py-2" placeholder="选填" />
+      </div>
+      <div>
+        <label class="text-sm text-gray-500">照片</label>
+        <input name="photo" type="file" accept="image/*" capture="environment" class="w-full mt-1 text-sm" />
+      </div>
+      <div>
+        <label class="text-sm text-gray-500">备注</label>
+        <textarea name="note" class="w-full mt-1 border rounded-lg px-3 py-2" rows="2"></textarea>
+      </div>
+      <button type="submit" class="w-full bg-teal-700 text-white rounded-lg py-2.5 font-medium">提交出货记录</button>
+    </form>
+
+    <!-- 采购/入库 -->
+    <form id="form-purchase" class="record-form hidden space-y-3 bg-white rounded-xl p-4 shadow-sm">
+      <div>
+        <label class="text-sm text-gray-500">原材料</label>
+        <select name="material_id" required class="w-full mt-1 border rounded-lg px-3 py-2"></select>
+      </div>
+      <div>
+        <label class="text-sm text-gray-500">入库数量</label>
+        <input name="qty" type="number" step="any" min="0" required class="w-full mt-1 border rounded-lg px-3 py-2" placeholder="0" />
+      </div>
+      <div>
+        <label class="text-sm text-gray-500">本次采购单价(选填,留空用默认单价)</label>
+        <input name="unit_price" type="number" step="any" min="0" class="w-full mt-1 border rounded-lg px-3 py-2" placeholder="留空使用原材料库中的单价" />
+      </div>
+      <div>
+        <label class="text-sm text-gray-500">照片</label>
+        <input name="photo" type="file" accept="image/*" capture="environment" class="w-full mt-1 text-sm" />
+      </div>
+      <div>
+        <label class="text-sm text-gray-500">备注</label>
+        <textarea name="note" class="w-full mt-1 border rounded-lg px-3 py-2" rows="2"></textarea>
+      </div>
+      <button type="submit" class="w-full bg-teal-700 text-white rounded-lg py-2.5 font-medium">提交入库记录</button>
+    </form>
+
+    <div class="mt-4">
+      <h3 class="text-sm font-medium text-gray-500 mb-2">最近记录</h3>
+      <div id="recentList" class="space-y-2"></div>
+    </div>
+  </section>
+
+  <!-- ============ 库存 ============ -->
+  <section id="tab-stock" class="tab-panel">
+    <h2 class="font-semibold mb-2">原材料库存</h2>
+    <div class="overflow-x-auto bg-white rounded-xl shadow-sm mb-4">
+      <table class="w-full text-sm" id="materialStockTable">
+        <thead class="bg-gray-100 text-gray-500">
+          <tr><th class="text-left px-3 py-2">名称</th><th class="text-right px-3 py-2">剩余</th><th class="text-right px-3 py-2">预警线</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <h2 class="font-semibold mb-2">产品库存</h2>
+    <div class="overflow-x-auto bg-white rounded-xl shadow-sm">
+      <table class="w-full text-sm" id="productStockTable">
+        <thead class="bg-gray-100 text-gray-500">
+          <tr><th class="text-left px-3 py-2">名称</th><th class="text-right px-3 py-2">剩余</th><th class="text-right px-3 py-2">预警线</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ 成本 ============ -->
+  <section id="tab-cost" class="tab-panel">
+    <div class="flex items-center gap-2 mb-3">
+      <label class="text-sm text-gray-500">最近</label>
+      <select id="costRangeSelect" class="border rounded-lg px-2 py-1 text-sm">
+        <option value="7">7 天</option>
+        <option value="14">14 天</option>
+        <option value="30" selected>30 天</option>
+        <option value="90">90 天</option>
+      </select>
+    </div>
+    <div class="bg-white rounded-xl p-3 shadow-sm mb-4">
+      <canvas id="costChart" height="160"></canvas>
+    </div>
+    <div class="bg-white rounded-xl p-3 shadow-sm mb-4 flex justify-between items-center">
+      <span class="text-sm text-gray-500">区间总成本</span>
+      <span id="costTotal" class="text-xl font-semibold text-teal-700">RM 0.00</span>
+    </div>
+    <div class="overflow-x-auto bg-white rounded-xl shadow-sm">
+      <table class="w-full text-sm" id="costTable">
+        <thead class="bg-gray-100 text-gray-500">
+          <tr><th class="text-left px-3 py-2">日期</th><th class="text-right px-3 py-2">成本</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ 日报 ============ -->
+  <section id="tab-daily" class="tab-panel">
+    <div class="flex items-center gap-2 mb-3">
+      <input id="dailyDate" type="date" class="border rounded-lg px-3 py-2 text-sm flex-1" />
+      <button id="exportDailyBtn" class="text-sm px-3 py-2 border rounded-lg border-teal-700 text-teal-700">导出</button>
+    </div>
+    <div id="dailyReport" class="space-y-4"></div>
+  </section>
+
+  <!-- ============ 总览 ============ -->
+  <section id="tab-overview" class="tab-panel">
+    <div class="grid grid-cols-2 gap-2 mb-3">
+      <input id="ovFrom" type="date" class="border rounded-lg px-2 py-2 text-sm" />
+      <input id="ovTo" type="date" class="border rounded-lg px-2 py-2 text-sm" />
+    </div>
+    <div class="bg-white rounded-xl p-3 shadow-sm mb-3">
+      <h3 class="text-sm font-medium text-gray-500 mb-1">原材料消耗趋势</h3>
+      <canvas id="consumeChart" height="140"></canvas>
+    </div>
+    <div class="bg-white rounded-xl p-3 shadow-sm mb-3">
+      <h3 class="text-sm font-medium text-gray-500 mb-1">生产 / 出货趋势</h3>
+      <canvas id="prodShipChart" height="140"></canvas>
+    </div>
+    <div class="bg-white rounded-xl p-3 shadow-sm mb-3">
+      <h3 class="text-sm font-medium text-gray-500 mb-1">成本趋势</h3>
+      <canvas id="overviewCostChart" height="140"></canvas>
+    </div>
+    <div class="bg-white rounded-xl p-3 shadow-sm">
+      <h3 class="text-sm font-medium text-gray-500 mb-2">照片归档</h3>
+      <div id="photoArchive" class="space-y-3"></div>
+    </div>
+  </section>
+
+  <!-- ============ 设置 ============ -->
+  <section id="tab-settings" class="tab-panel">
+    <div class="flex gap-2 mb-3">
+      <button data-settings="materials" class="settings-tab-btn active px-3 py-1.5 rounded-full border border-teal-700 text-teal-700 text-sm">原材料库</button>
+      <button data-settings="products" class="settings-tab-btn px-3 py-1.5 rounded-full border border-teal-700 text-teal-700 text-sm">产品库</button>
+    </div>
+
+    <div id="settings-materials" class="settings-panel">
+      <form id="materialForm" class="bg-white rounded-xl p-4 shadow-sm space-y-2 mb-4">
+        <input type="hidden" name="id" />
+        <div class="grid grid-cols-2 gap-2">
+          <input name="name" placeholder="名称" required class="border rounded-lg px-3 py-2" />
+          <input name="unit" placeholder="单位(如 kg)" required class="border rounded-lg px-3 py-2" />
+          <input name="unit_price" type="number" step="any" placeholder="单价/成本价 (RM)" required class="border rounded-lg px-3 py-2" />
+          <input name="reorder_threshold" type="number" step="any" placeholder="预警线" class="border rounded-lg px-3 py-2" />
+          <input name="opening_stock" type="number" step="any" placeholder="期初库存" class="border rounded-lg px-3 py-2 col-span-2" />
+        </div>
+        <div class="flex gap-2">
+          <button type="submit" class="flex-1 bg-teal-700 text-white rounded-lg py-2 text-sm">保存原材料</button>
+          <button type="button" id="materialCancelEdit" class="hidden px-4 border rounded-lg text-sm">取消编辑</button>
+        </div>
+      </form>
+      <div class="overflow-x-auto bg-white rounded-xl shadow-sm">
+        <table class="w-full text-sm" id="materialTable">
+          <thead class="bg-gray-100 text-gray-500">
+            <tr><th class="text-left px-2 py-2">名称</th><th class="px-2 py-2">单位</th><th class="px-2 py-2">单价</th><th class="px-2 py-2">预警线</th><th class="px-2 py-2">期初</th><th class="px-2 py-2"></th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="settings-products" class="settings-panel hidden">
+      <form id="productForm" class="bg-white rounded-xl p-4 shadow-sm space-y-2 mb-4">
+        <input type="hidden" name="id" />
+        <div class="grid grid-cols-2 gap-2">
+          <input name="item_code" placeholder="产品编号(选填,如 B-0003)" class="border rounded-lg px-3 py-2 col-span-2" />
+          <input name="name" placeholder="名称" required class="border rounded-lg px-3 py-2" />
+          <input name="unit" placeholder="单位(如 杯/盒)" required class="border rounded-lg px-3 py-2" />
+          <input name="reorder_threshold" type="number" step="any" placeholder="预警线" class="border rounded-lg px-3 py-2" />
+          <input name="opening_stock" type="number" step="any" placeholder="期初库存" class="border rounded-lg px-3 py-2" />
+        </div>
+        <div class="flex gap-2">
+          <button type="submit" class="flex-1 bg-teal-700 text-white rounded-lg py-2 text-sm">保存产品</button>
+          <button type="button" id="productCancelEdit" class="hidden px-4 border rounded-lg text-sm">取消编辑</button>
+        </div>
+      </form>
+      <div class="overflow-x-auto bg-white rounded-xl shadow-sm">
+        <table class="w-full text-sm" id="productTable">
+          <thead class="bg-gray-100 text-gray-500">
+            <tr><th class="text-left px-2 py-2">编号</th><th class="text-left px-2 py-2">名称</th><th class="px-2 py-2">单位</th><th class="px-2 py-2">预警线</th><th class="px-2 py-2">期初</th><th class="px-2 py-2"></th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<nav class="fixed bottom-0 inset-x-0 bg-white border-t flex justify-around py-1.5 z-20">
+  <button data-tab="record" class="nav-btn active flex flex-col items-center text-xs text-gray-500 px-2 py-1">
+    <span class="nav-icon text-lg">📝</span>记录</button>
+  <button data-tab="stock" class="nav-btn flex flex-col items-center text-xs text-gray-500 px-2 py-1">
+    <span class="nav-icon text-lg">📦</span>库存</button>
+  <button data-tab="cost" class="nav-btn flex flex-col items-center text-xs text-gray-500 px-2 py-1">
+    <span class="nav-icon text-lg">💰</span>成本</button>
+  <button data-tab="daily" class="nav-btn flex flex-col items-center text-xs text-gray-500 px-2 py-1">
+    <span class="nav-icon text-lg">📅</span>日报</button>
+  <button data-tab="overview" class="nav-btn flex flex-col items-center text-xs text-gray-500 px-2 py-1">
+    <span class="nav-icon text-lg">📊</span>总览</button>
+  <button data-tab="settings" class="nav-btn flex flex-col items-center text-xs text-gray-500 px-2 py-1">
+    <span class="nav-icon text-lg">⚙️</span>设置</button>
+</nav>
+
+<div id="toast" class="fixed bottom-20 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-sm px-4 py-2 rounded-full opacity-0 pointer-events-none transition-opacity z-30"></div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

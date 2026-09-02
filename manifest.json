@@ -1,0 +1,9 @@
+{
+  "name": "电子台账",
+  "short_name": "台账",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#f9fafb",
+  "theme_color": "#0f766e",
+  "icons": []
+}
