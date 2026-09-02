@@ -227,6 +227,43 @@
     </div>
   </section>
 
+  <!-- ============ 成本计算 ============ -->
+  <section id="tab-calc" class="tab-panel">
+    <div class="bg-white rounded-xl p-4 shadow-sm mb-3">
+      <label class="text-sm text-gray-500">关联产品(选填,可保存/载入标准配方)</label>
+      <select id="calcProductSelect" class="w-full mt-1 border rounded-lg px-3 py-2">
+        <option value="">— 不关联,只是快速算算 —</option>
+      </select>
+    </div>
+
+    <div id="calcRows" class="space-y-2 mb-3"></div>
+    <button id="calcAddRowBtn" type="button" class="w-full border border-teal-700 text-teal-700 rounded-lg py-2 text-sm mb-3">+ 添加原材料</button>
+
+    <div class="bg-white rounded-xl p-4 shadow-sm mb-3 space-y-2">
+      <div class="flex items-center justify-between">
+        <span class="text-sm text-gray-500">这次产出数量</span>
+        <div class="flex items-center gap-1">
+          <input id="calcYield" type="number" step="any" min="0" value="1" class="w-20 border rounded-lg px-2 py-1 text-right" />
+          <span id="calcYieldUnit" class="text-sm text-gray-500 w-10"></span>
+        </div>
+      </div>
+      <div class="flex justify-between items-center border-t pt-2">
+        <span class="text-sm text-gray-500">材料总成本</span>
+        <span id="calcTotal" class="text-lg font-semibold text-teal-700">RM 0.00</span>
+      </div>
+      <div class="flex justify-between items-center">
+        <span class="text-sm text-gray-500">每份成本</span>
+        <span id="calcPerUnit" class="text-lg font-semibold text-teal-700">RM 0.00</span>
+      </div>
+    </div>
+
+    <div class="flex gap-2 mb-2">
+      <button id="calcLoadBtn" type="button" class="flex-1 border border-teal-700 text-teal-700 rounded-lg py-2 text-sm hidden">载入已保存配方</button>
+      <button id="calcSaveBtn" type="button" class="flex-1 bg-teal-700 text-white rounded-lg py-2 text-sm hidden">保存为标准配方</button>
+    </div>
+    <button id="calcClearBtn" type="button" class="w-full text-gray-400 text-xs py-1">清空重新算</button>
+  </section>
+
   <!-- ============ 日报 ============ -->
   <section id="tab-daily" class="tab-panel">
     <div class="flex items-center gap-2 mb-3">
@@ -331,6 +368,8 @@
     <span class="nav-icon text-lg">📦</span>库存</button>
   <button data-tab="cost" class="nav-btn flex flex-col items-center text-xs text-gray-500 px-2 py-1">
     <span class="nav-icon text-lg">💰</span>成本</button>
+  <button data-tab="calc" class="nav-btn flex flex-col items-center text-xs text-gray-500 px-2 py-1">
+    <span class="nav-icon text-lg">🧮</span>计算</button>
   <button data-tab="daily" class="nav-btn flex flex-col items-center text-xs text-gray-500 px-2 py-1">
     <span class="nav-icon text-lg">📅</span>日报</button>
   <button data-tab="overview" class="nav-btn flex flex-col items-center text-xs text-gray-500 px-2 py-1">

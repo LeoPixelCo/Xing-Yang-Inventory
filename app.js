@@ -287,7 +287,7 @@ $('#form-purchase select[name="material_id"]')?.addEventListener('change', updat
 $('#form-purchase input[name="qty"]')?.addEventListener('input', updatePurchaseConvertHint);
 
 // -------------------- 导航 --------------------
-const TAB_TITLES = { record: '每日记录', stock: '库存', cost: '成本', daily: '日报', overview: '后台总览', settings: '设置' };
+const TAB_TITLES = { record: '每日记录', stock: '库存', cost: '成本', calc: '成本计算', daily: '日报', overview: '后台总览', settings: '设置' };
 
 function switchTab(tab) {
   if (currentRole === 'staff' && !STAFF_ALLOWED_TABS.includes(tab)) tab = 'record';
@@ -298,6 +298,7 @@ function switchTab(tab) {
   if (!sb) return; // 尚未配置 Supabase,不再往下发请求
   if (tab === 'stock') renderStock();
   if (tab === 'cost') renderCost();
+  if (tab === 'calc') renderCalc();
   if (tab === 'daily') renderDaily();
   if (tab === 'overview') renderOverview();
   if (tab === 'record') renderRecent();
@@ -509,6 +510,152 @@ async function renderCost() {
   });
 }
 $('#costRangeSelect').addEventListener('change', renderCost);
+
+// -------------------- 成本计算(配方计算器) --------------------
+let calcRows = []; // [{ material_id, qty }]
+let calcRowSeq = 0;
+
+function calcMaterialOptions(selectedId) {
+  return materials.map(m => `<option value="${m.id}" ${m.id === selectedId ? 'selected' : ''}>${m.item_code ? m.item_code + ' ' : ''}${m.name}(${m.unit})</option>`).join('')
+    || '<option value="">(请先在设置中添加原材料)</option>';
+}
+
+function renderCalcRows() {
+  $('#calcRows').innerHTML = calcRows.map(row => {
+    const m = materials.find(x => x.id === row.material_id);
+    const unitLabel = m ? stockUnitLabel(m) : '';
+    const subtotal = m ? row.qty * pricePerBaseUnit(m) : 0;
+    return `
+    <div class="calc-row bg-white rounded-xl p-3 shadow-sm flex items-center gap-2" data-row="${row.rowId}">
+      <select class="calc-material flex-1 min-w-0 border rounded-lg px-2 py-1.5 text-sm">${calcMaterialOptions(row.material_id)}</select>
+      <input type="number" step="any" min="0" value="${row.qty || ''}" placeholder="0" class="calc-qty w-16 border rounded-lg px-2 py-1.5 text-sm text-right" />
+      <span class="calc-unit text-xs text-gray-400 w-8 shrink-0">${unitLabel}</span>
+      <span class="calc-subtotal text-sm font-medium text-teal-700 w-20 shrink-0 text-right">${money(subtotal)}</span>
+      <button type="button" class="calc-remove text-red-600 text-xs shrink-0">✕</button>
+    </div>`;
+  }).join('') || '<p class="text-sm text-gray-400 text-center py-2">还没有添加原材料</p>';
+  updateCalcTotals();
+}
+
+function updateCalcTotals() {
+  let total = 0;
+  $all('.calc-row').forEach(rowEl => {
+    const rowId = rowEl.dataset.row;
+    const row = calcRows.find(r => String(r.rowId) === rowId);
+    if (!row) return;
+    const m = materials.find(x => x.id === row.material_id);
+    const subtotal = m ? row.qty * pricePerBaseUnit(m) : 0;
+    rowEl.querySelector('.calc-subtotal').textContent = money(subtotal);
+    total += subtotal;
+  });
+  const yield_ = Number($('#calcYield').value) || 0;
+  $('#calcTotal').textContent = money(total);
+  $('#calcPerUnit').textContent = yield_ > 0 ? money(total / yield_) : '—';
+}
+
+$('#calcRows').addEventListener('input', e => {
+  const rowEl = e.target.closest('.calc-row');
+  if (!rowEl) return;
+  const row = calcRows.find(r => String(r.rowId) === rowEl.dataset.row);
+  if (!row) return;
+  if (e.target.classList.contains('calc-qty')) { row.qty = Number(e.target.value) || 0; updateCalcTotals(); }
+});
+$('#calcRows').addEventListener('change', e => {
+  const rowEl = e.target.closest('.calc-row');
+  if (!rowEl) return;
+  const row = calcRows.find(r => String(r.rowId) === rowEl.dataset.row);
+  if (!row) return;
+  if (e.target.classList.contains('calc-material')) {
+    row.material_id = e.target.value;
+    const m = materials.find(x => x.id === row.material_id);
+    rowEl.querySelector('.calc-unit').textContent = m ? stockUnitLabel(m) : '';
+    updateCalcTotals();
+  }
+});
+$('#calcRows').addEventListener('click', e => {
+  if (!e.target.classList.contains('calc-remove')) return;
+  const rowEl = e.target.closest('.calc-row');
+  calcRows = calcRows.filter(r => String(r.rowId) !== rowEl.dataset.row);
+  renderCalcRows();
+});
+
+$('#calcAddRowBtn').addEventListener('click', () => {
+  calcRows.push({ rowId: ++calcRowSeq, material_id: materials[0] ? materials[0].id : '', qty: 0 });
+  renderCalcRows();
+});
+$('#calcYield').addEventListener('input', updateCalcTotals);
+
+$('#calcClearBtn').addEventListener('click', () => {
+  calcRows = [];
+  $('#calcYield').value = 1;
+  $('#calcProductSelect').value = '';
+  updateCalcProductButtons();
+  renderCalcRows();
+});
+
+async function updateCalcProductButtons() {
+  const productId = $('#calcProductSelect').value;
+  $('#calcYieldUnit').textContent = '';
+  if (!productId) {
+    $('#calcSaveBtn').classList.add('hidden');
+    $('#calcLoadBtn').classList.add('hidden');
+    return;
+  }
+  const p = products.find(x => x.id === productId);
+  $('#calcYieldUnit').textContent = p ? p.unit : '';
+  $('#calcSaveBtn').classList.remove('hidden');
+  const { data } = await sb.from('product_recipe').select('id').eq('product_id', productId).limit(1);
+  $('#calcLoadBtn').classList.toggle('hidden', !data || !data.length);
+}
+
+$('#calcProductSelect').addEventListener('change', updateCalcProductButtons);
+
+$('#calcLoadBtn').addEventListener('click', async () => {
+  const productId = $('#calcProductSelect').value;
+  if (!productId) return;
+  const { data, error } = await sb.from('product_recipe').select('*').eq('product_id', productId);
+  if (error) { toast('读取配方失败: ' + error.message, true); return; }
+  calcRows = (data || []).map(r => ({ rowId: ++calcRowSeq, material_id: r.material_id, qty: Number(r.qty_per_unit) || 0 }));
+  $('#calcYield').value = 1;
+  renderCalcRows();
+  toast('已载入配方');
+});
+
+$('#calcSaveBtn').addEventListener('click', async () => {
+  const productId = $('#calcProductSelect').value;
+  if (!productId) return;
+  const yield_ = Number($('#calcYield').value) || 0;
+  if (yield_ <= 0) { toast('请先填写"这次产出数量"(大于0),才能换算成每份用量', true); return; }
+  const rows = calcRows.filter(r => r.material_id && r.qty > 0);
+  if (!rows.length) { toast('还没有添加任何原材料', true); return; }
+  if (!confirm('保存后会覆盖这个产品之前保存的标准配方,确定吗?')) return;
+  const btn = $('#calcSaveBtn');
+  btn.disabled = true;
+  try {
+    const { error: delErr } = await sb.from('product_recipe').delete().eq('product_id', productId);
+    if (delErr) throw delErr;
+    const payload = rows.map(r => ({ product_id: productId, material_id: r.material_id, qty_per_unit: r.qty / yield_ }));
+    const { error: insErr } = await sb.from('product_recipe').insert(payload);
+    if (insErr) throw insErr;
+    toast('已保存标准配方');
+    updateCalcProductButtons();
+  } catch (err) {
+    toast('保存失败: ' + err.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+function renderCalc() {
+  const opts = products.map(p => `<option value="${p.id}">${p.item_code ? p.item_code + ' ' : ''}${p.name}</option>`).join('');
+  const sel = $('#calcProductSelect');
+  const current = sel.value;
+  sel.innerHTML = '<option value="">— 不关联,只是快速算算 —</option>' + opts;
+  sel.value = current;
+  if (!calcRows.length) calcRows.push({ rowId: ++calcRowSeq, material_id: materials[0] ? materials[0].id : '', qty: 0 });
+  renderCalcRows();
+  updateCalcProductButtons();
+}
 
 // -------------------- 日报 --------------------
 async function renderDaily() {
