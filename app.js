@@ -549,10 +549,15 @@ async function renderDaily() {
     ${section('出货记录', s.data || [], r => `<div class="flex justify-between items-center border-b pb-1"><span>${productName(r.product_id)}${r.destination ? ' → ' + r.destination : ''}</span><span>${num(r.qty)}${delBtn('shipment_records', r.id)}</span></div>`)}
     ${section('原材料入库', pu.data || [], r => { const m = materials.find(x => x.id === r.material_id); return `<div class="flex justify-between items-center border-b pb-1"><span>${materialName(r.material_id)}${r.note ? ' · ' + r.note : ''}</span><span>${num(r.qty)} ${m ? m.unit : ''}${delBtn('material_purchases', r.id)}</span></div>`; })}
     <div class="bg-white rounded-xl p-4 shadow-sm">
-      <h3 class="font-medium mb-2">当日结束库存快照</h3>
+      <h3 class="font-medium mb-2">当日结束库存快照 · 原材料</h3>
       <div class="text-sm space-y-1">
-        ${mStock.map(m => `<div class="flex justify-between"><span>${m.name}</span><span class="${m.stock <= m.reorder_threshold ? 'text-red-600 font-semibold' : ''}">${isGramTracked(m) ? formatWeight(m.stock) : num(m.stock) + ' ' + m.unit}</span></div>`).join('')}
-        ${pStock.map(p2 => `<div class="flex justify-between"><span>${p2.name}</span><span class="${p2.stock <= p2.reorder_threshold ? 'text-red-600 font-semibold' : ''}">${num(p2.stock)} ${p2.unit}</span></div>`).join('')}
+        ${mStock.map(m => `<div class="flex justify-between"><span>${m.name}</span><span class="${m.stock <= m.reorder_threshold ? 'text-red-600 font-semibold' : ''}">${isGramTracked(m) ? formatWeight(m.stock) : num(m.stock) + ' ' + m.unit}</span></div>`).join('') || '<p class="text-sm text-gray-400">暂无原材料</p>'}
+      </div>
+    </div>
+    <div class="bg-white rounded-xl p-4 shadow-sm">
+      <h3 class="font-medium mb-2">当日结束库存快照 · 产品</h3>
+      <div class="text-sm space-y-1">
+        ${pStock.map(p2 => `<div class="flex justify-between"><span>${p2.name}</span><span class="${p2.stock <= p2.reorder_threshold ? 'text-red-600 font-semibold' : ''}">${num(p2.stock)} ${p2.unit}</span></div>`).join('') || '<p class="text-sm text-gray-400">暂无产品</p>'}
       </div>
     </div>
   `;
@@ -581,10 +586,12 @@ function buildDailyReportHTML(d) {
     return { name: materialName(r.material_id), qty: num(r.qty) + ' ' + (m ? m.unit : ''), price: money(r.unit_price), note: r.note || '' };
   });
 
-  const stockRows = [
-    ...d.mStock.map(m => ({ name: m.name, qty: isGramTracked(m) ? formatWeight(m.stock) : num(m.stock) + ' ' + m.unit, low: m.stock <= m.reorder_threshold })),
-    ...d.pStock.map(p => ({ name: p.name, qty: num(p.stock) + ' ' + p.unit, low: p.stock <= p.reorder_threshold }))
-  ];
+  const mStockRows = d.mStock.map(m => ({ name: m.name, qty: isGramTracked(m) ? formatWeight(m.stock) : num(m.stock) + ' ' + m.unit, low: m.stock <= m.reorder_threshold }));
+  const pStockRows = d.pStock.map(p => ({ name: p.name, qty: num(p.stock) + ' ' + p.unit, low: p.stock <= p.reorder_threshold }));
+  const stockTable = rows => rows.length ? `<table class="rpt-table">
+        <thead><tr><th>品项</th><th class="num">剩余库存</th></tr></thead>
+        <tbody>${rows.map(r => `<tr><td>${r.name}</td><td class="num" style="${r.low ? 'color:#dc2626; font-weight:700;' : ''}">${r.qty}</td></tr>`).join('')}</tbody>
+      </table>` : '<div class="rpt-empty">暂无数据</div>';
 
   return `
     <div style="font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; color:#111827;">
@@ -626,11 +633,11 @@ function buildDailyReportHTML(d) {
       <div style="font-size:13px; font-weight:700; margin:14px 0 6px;">原材料入库</div>
       ${rptRows([{ label: '原材料', get: r => r.name }, { label: '数量', get: r => r.qty, num: true }, { label: '采购单价', get: r => r.price, num: true }, { label: '备注', get: r => r.note }], purchaseRows, '当日无入库记录')}
 
-      <div style="font-size:13px; font-weight:700; margin:14px 0 6px;">当日结束库存快照</div>
-      <table class="rpt-table">
-        <thead><tr><th>品项</th><th class="num">剩余库存</th></tr></thead>
-        <tbody>${stockRows.map(r => `<tr><td>${r.name}</td><td class="num" style="${r.low ? 'color:#dc2626; font-weight:700;' : ''}">${r.qty}</td></tr>`).join('')}</tbody>
-      </table>
+      <div style="font-size:13px; font-weight:700; margin:14px 0 6px;">当日结束库存快照 · 原材料</div>
+      ${stockTable(mStockRows)}
+
+      <div style="font-size:13px; font-weight:700; margin:14px 0 6px;">当日结束库存快照 · 产品</div>
+      ${stockTable(pStockRows)}
 
       <div style="margin-top:18px; font-size:10px; color:#9ca3af; text-align:center;">由电子台账系统自动生成</div>
     </div>`;
