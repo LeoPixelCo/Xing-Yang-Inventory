@@ -21,13 +21,43 @@
   .subtab-btn.active { background: #0f766e; color: white; }
   input, select, textarea { font-size: 16px; } /* 防止iOS自动缩放 */
   ::-webkit-scrollbar { height: 6px; width: 6px; }
+
+  /* -------- 打印/导出 PDF 用的报告样式 -------- */
+  #printArea { display: none; }
+  #printArea, #printArea * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .rpt-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .rpt-table th, .rpt-table td { border: 1px solid #d1d5db; padding: 5px 8px; text-align: left; }
+  .rpt-table th { background: #f3f4f6; color: #4b5563; font-weight: 600; }
+  .rpt-table td.num, .rpt-table th.num { text-align: right; }
+  .rpt-empty { padding: 10px 8px; color: #9ca3af; font-size: 12px; border: 1px solid #d1d5db; }
+  @media print {
+    @page { size: A4; margin: 14mm; }
+    body * { visibility: hidden; }
+    #printArea, #printArea * { visibility: visible; }
+    #printArea { display: block; position: absolute; left: 0; top: 0; width: 100%; }
+  }
 </style>
 </head>
 <body class="bg-gray-50 text-gray-800 min-h-screen pb-20">
 
+<div id="lockScreen" class="fixed inset-0 bg-white z-50 flex items-center justify-center p-6">
+  <form id="lockForm" class="w-full max-w-xs space-y-3 text-center">
+    <div class="text-3xl">🔒</div>
+    <h2 class="text-lg font-semibold">请输入密码</h2>
+    <p class="text-xs text-gray-400">员工请输入员工密码;老板请输入老板密码查看全部功能</p>
+    <input id="pinInput" type="tel" inputmode="numeric" autocomplete="off" class="w-full text-center text-2xl tracking-widest border rounded-lg px-3 py-3" placeholder="••••" />
+    <p id="pinError" class="text-xs text-red-600 h-4"></p>
+    <button type="submit" class="w-full bg-teal-700 text-white rounded-lg py-2.5 font-medium">解锁</button>
+  </form>
+</div>
+
 <header class="sticky top-0 z-20 bg-teal-700 text-white px-4 py-3 flex items-center justify-between shadow">
   <h1 class="text-lg font-semibold" id="pageTitle">电子台账</h1>
-  <span id="connStatus" class="text-xs px-2 py-1 rounded-full bg-teal-800">连接中…</span>
+  <div class="flex items-center gap-2">
+    <span id="roleTag" class="text-xs px-2 py-1 rounded-full bg-teal-800 hidden"></span>
+    <span id="connStatus" class="text-xs px-2 py-1 rounded-full bg-teal-800">连接中…</span>
+    <button id="switchRoleBtn" class="text-xs px-2 py-1 rounded-full bg-teal-800 hidden">切换</button>
+  </div>
 </header>
 
 <main class="max-w-xl mx-auto p-3 pb-24">
@@ -48,7 +78,7 @@
         <select name="material_id" required class="w-full mt-1 border rounded-lg px-3 py-2"></select>
       </div>
       <div>
-        <label class="text-sm text-gray-500">数量</label>
+        <label class="text-sm text-gray-500">数量 <span id="consumeQtyUnit" class="text-teal-700 font-medium"></span></label>
         <input name="qty" type="number" step="any" min="0" required class="w-full mt-1 border rounded-lg px-3 py-2" placeholder="0" />
       </div>
       <div>
@@ -115,11 +145,12 @@
         <select name="material_id" required class="w-full mt-1 border rounded-lg px-3 py-2"></select>
       </div>
       <div>
-        <label class="text-sm text-gray-500">入库数量</label>
+        <label class="text-sm text-gray-500">入库数量 <span id="purchaseQtyUnit" class="text-teal-700 font-medium"></span></label>
         <input name="qty" type="number" step="any" min="0" required class="w-full mt-1 border rounded-lg px-3 py-2" placeholder="0" />
+        <p id="purchaseConvertHint" class="text-xs text-gray-400 mt-1"></p>
       </div>
-      <div>
-        <label class="text-sm text-gray-500">本次采购单价(选填,留空用默认单价)</label>
+      <div id="purchasePriceField">
+        <label class="text-sm text-gray-500">本次采购单价<span id="purchasePriceUnit"></span>(选填,留空用默认单价)</label>
         <input name="unit_price" type="number" step="any" min="0" class="w-full mt-1 border rounded-lg px-3 py-2" placeholder="留空使用原材料库中的单价" />
       </div>
       <div>
@@ -193,7 +224,8 @@
   <section id="tab-daily" class="tab-panel">
     <div class="flex items-center gap-2 mb-3">
       <input id="dailyDate" type="date" class="border rounded-lg px-3 py-2 text-sm flex-1" />
-      <button id="exportDailyBtn" class="text-sm px-3 py-2 border rounded-lg border-teal-700 text-teal-700">导出</button>
+      <button id="exportDailyPdfBtn" class="text-sm px-3 py-2 border rounded-lg border-teal-700 text-teal-700 whitespace-nowrap">导出 PDF</button>
+      <button id="exportDailyCsvBtn" class="text-sm px-3 py-2 border rounded-lg border-teal-700 text-teal-700 whitespace-nowrap">导出 CSV</button>
     </div>
     <div id="dailyReport" class="space-y-4"></div>
   </section>
@@ -233,12 +265,15 @@
       <form id="materialForm" class="bg-white rounded-xl p-4 shadow-sm space-y-2 mb-4">
         <input type="hidden" name="id" />
         <div class="grid grid-cols-2 gap-2">
+          <input name="item_code" placeholder="原材料编号(选填,如 W-1004)" class="border rounded-lg px-3 py-2 col-span-2" />
           <input name="name" placeholder="名称" required class="border rounded-lg px-3 py-2" />
-          <input name="unit" placeholder="单位(如 kg)" required class="border rounded-lg px-3 py-2" />
-          <input name="unit_price" type="number" step="any" placeholder="单价/成本价 (RM)" required class="border rounded-lg px-3 py-2" />
+          <input name="unit" placeholder="采购单位(如 BAG/CTN/KG)" required class="border rounded-lg px-3 py-2" />
+          <input name="unit_price" type="number" step="any" placeholder="采购单价 (RM/每采购单位)" required class="border rounded-lg px-3 py-2" />
+          <input name="pack_qty_grams" type="number" step="any" placeholder="每采购单位=?克(选填,填了才按克记录)" class="border rounded-lg px-3 py-2" />
           <input name="reorder_threshold" type="number" step="any" placeholder="预警线" class="border rounded-lg px-3 py-2" />
           <input name="opening_stock" type="number" step="any" placeholder="期初库存" class="border rounded-lg px-3 py-2 col-span-2" />
         </div>
+        <p class="text-xs text-gray-400">"每采购单位=?克" 填了之后,消耗记录就直接用【克】登记,成本自动按每克单价算;不填就还是按采购单位(BAG/CTN)记录和算成本。</p>
         <div class="flex gap-2">
           <button type="submit" class="flex-1 bg-teal-700 text-white rounded-lg py-2 text-sm">保存原材料</button>
           <button type="button" id="materialCancelEdit" class="hidden px-4 border rounded-lg text-sm">取消编辑</button>
@@ -247,7 +282,7 @@
       <div class="overflow-x-auto bg-white rounded-xl shadow-sm">
         <table class="w-full text-sm" id="materialTable">
           <thead class="bg-gray-100 text-gray-500">
-            <tr><th class="text-left px-2 py-2">名称</th><th class="px-2 py-2">单位</th><th class="px-2 py-2">单价</th><th class="px-2 py-2">预警线</th><th class="px-2 py-2">期初</th><th class="px-2 py-2"></th></tr>
+            <tr><th class="text-left px-2 py-2">编号</th><th class="text-left px-2 py-2">名称</th><th class="px-2 py-2">采购单位</th><th class="px-2 py-2">采购单价</th><th class="px-2 py-2">每克成本</th><th class="px-2 py-2">预警线</th><th class="px-2 py-2">期初</th><th class="px-2 py-2"></th></tr>
           </thead>
           <tbody></tbody>
         </table>
@@ -298,6 +333,8 @@
 </nav>
 
 <div id="toast" class="fixed bottom-20 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-sm px-4 py-2 rounded-full opacity-0 pointer-events-none transition-opacity z-30"></div>
+
+<div id="printArea"></div>
 
 <script src="config.js"></script>
 <script src="app.js"></script>

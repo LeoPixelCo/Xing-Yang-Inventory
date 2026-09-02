@@ -8,6 +8,7 @@ let sb = null;
 let materials = [];
 let products = [];
 let charts = {}; // 保存 Chart.js 实例,重绘前先销毁
+let lastDaily = null; // 最近一次日报数据,供导出 PDF/CSV 使用
 
 // -------------------- 工具函数 --------------------
 function $(sel, root = document) { return root.querySelector(sel); }
@@ -24,6 +25,18 @@ function toast(msg, isError = false) {
 
 function money(n) { return 'RM ' + (Number(n) || 0).toFixed(2); }
 function num(n) { return (Math.round((Number(n) || 0) * 100) / 100).toString(); }
+
+// 克重换算:某原材料是否按克追踪(设置了 pack_qty_grams 才算)
+function isGramTracked(m) { return !!(m && Number(m.pack_qty_grams) > 0); }
+// 库存/消耗记录用的计量单位文字
+function stockUnitLabel(m) { return isGramTracked(m) ? 'g' : (m ? m.unit : ''); }
+// 每 1 个记录单位(克重类=每克,否则=每采购单位)的成本
+function pricePerBaseUnit(m) { return isGramTracked(m) ? (Number(m.unit_price) || 0) / Number(m.pack_qty_grams) : (Number(m.unit_price) || 0); }
+// 把克数格式化成好读的 g / kg
+function formatWeight(g) {
+  const n = Number(g) || 0;
+  return Math.abs(n) >= 1000 ? (n / 1000).toFixed(2) + ' kg' : Math.round(n) + ' g';
+}
 
 function todayStr() {
   return new Date().toLocaleDateString('en-CA');
@@ -54,6 +67,54 @@ function fmtTime(iso) {
   return d.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
+// -------------------- 身份(PIN 锁,仅界面层面) --------------------
+let currentRole = null; // 'boss' | 'staff'
+const STAFF_ALLOWED_TABS = ['record'];
+
+function applyRole(role) {
+  currentRole = role;
+  const isStaff = role === 'staff';
+  $all('.nav-btn').forEach(b => { b.classList.toggle('hidden', isStaff && !STAFF_ALLOWED_TABS.includes(b.dataset.tab)); });
+  $('#purchasePriceField')?.classList.toggle('hidden', isStaff);
+  $('#roleTag').textContent = isStaff ? '员工模式' : '老板模式';
+  $('#roleTag').classList.remove('hidden');
+  $('#switchRoleBtn').classList.remove('hidden');
+  if (isStaff) switchTab('record');
+}
+
+function unlock(role) {
+  localStorage.setItem('ledger_role', role);
+  $('#lockScreen').classList.add('hidden');
+  applyRole(role);
+}
+
+$('#lockForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const pin = $('#pinInput').value.trim();
+  const pins = CFG.PINS || {};
+  if (pin && pin === pins.boss) { unlock('boss'); return; }
+  if (pin && pin === pins.staff) { unlock('staff'); return; }
+  $('#pinError').textContent = '密码不对,再试一次';
+  $('#pinInput').value = '';
+  $('#pinInput').focus();
+});
+
+$('#switchRoleBtn').addEventListener('click', () => {
+  localStorage.removeItem('ledger_role');
+  location.reload();
+});
+
+function initRoleGate() {
+  const saved = localStorage.getItem('ledger_role');
+  if (saved === 'boss' || saved === 'staff') {
+    $('#lockScreen').classList.add('hidden');
+    applyRole(saved);
+  } else {
+    $('#lockScreen').classList.remove('hidden');
+    $('#pinInput').focus();
+  }
+}
+
 // -------------------- 初始化 --------------------
 function initSupabase() {
   if (!CFG.SUPABASE_URL || CFG.SUPABASE_URL.includes('YOUR-PROJECT')) {
@@ -71,8 +132,10 @@ async function loadMaterials() {
   const { data, error } = await sb.from('materials').select('*').eq('archived', false).order('name');
   if (error) { toast('读取原材料库失败: ' + error.message, true); return; }
   materials = data || [];
-  const opts = materials.map(m => `<option value="${m.id}">${m.name}(${m.unit})</option>`).join('');
+  const opts = materials.map(m => `<option value="${m.id}">${m.item_code ? m.item_code + ' ' : ''}${m.name}(${m.unit})</option>`).join('');
   $all('select[name="material_id"]').forEach(sel => { sel.innerHTML = opts || '<option value="">(请先在设置中添加原材料)</option>'; });
+  updateConsumeQtyUnit();
+  updatePurchaseQtyUnit();
 }
 
 async function loadProducts() {
@@ -86,10 +149,51 @@ async function loadProducts() {
 function materialName(id) { const m = materials.find(x => x.id === id); return m ? m.name : '(已删除的原材料)'; }
 function productName(id) { const p = products.find(x => x.id === id); return p ? p.name : '(已删除的产品)'; }
 
+// -------------------- 克重换算:表单单位提示 --------------------
+function selectedMaterial(selectEl) { return materials.find(m => m.id === selectEl.value); }
+
+function updateConsumeQtyUnit() {
+  const sel = $('#form-consume select[name="material_id"]');
+  const hint = $('#consumeQtyUnit');
+  if (!sel || !hint) return;
+  const m = selectedMaterial(sel);
+  hint.textContent = m ? `(${stockUnitLabel(m)})` : '';
+}
+
+function updatePurchaseQtyUnit() {
+  const sel = $('#form-purchase select[name="material_id"]');
+  const unitEl = $('#purchaseQtyUnit');
+  const priceUnitEl = $('#purchasePriceUnit');
+  if (!sel || !unitEl) return;
+  const m = selectedMaterial(sel);
+  unitEl.textContent = m ? `(按 ${m.unit} 计)` : '';
+  if (priceUnitEl) priceUnitEl.textContent = m ? ` (每 ${m.unit})` : '';
+  updatePurchaseConvertHint();
+}
+
+function updatePurchaseConvertHint() {
+  const sel = $('#form-purchase select[name="material_id"]');
+  const qtyInput = $('#form-purchase input[name="qty"]');
+  const hint = $('#purchaseConvertHint');
+  if (!sel || !qtyInput || !hint) return;
+  const m = selectedMaterial(sel);
+  const qty = Number(qtyInput.value);
+  if (m && isGramTracked(m) && qty > 0) {
+    hint.textContent = `= ${formatWeight(qty * m.pack_qty_grams)}`;
+  } else {
+    hint.textContent = '';
+  }
+}
+
+$('#form-consume select[name="material_id"]')?.addEventListener('change', updateConsumeQtyUnit);
+$('#form-purchase select[name="material_id"]')?.addEventListener('change', updatePurchaseQtyUnit);
+$('#form-purchase input[name="qty"]')?.addEventListener('input', updatePurchaseConvertHint);
+
 // -------------------- 导航 --------------------
 const TAB_TITLES = { record: '每日记录', stock: '库存', cost: '成本', daily: '日报', overview: '后台总览', settings: '设置' };
 
 function switchTab(tab) {
+  if (currentRole === 'staff' && !STAFF_ALLOWED_TABS.includes(tab)) tab = 'record';
   $all('.tab-panel').forEach(p => p.classList.remove('active'));
   $(`#tab-${tab}`).classList.add('active');
   $all('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
@@ -150,6 +254,8 @@ async function handleRecordSubmit(e, table, buildRow) {
     if (error) throw error;
     toast('已提交');
     form.reset();
+    if (form.id === 'form-consume') updateConsumeQtyUnit();
+    if (form.id === 'form-purchase') updatePurchaseQtyUnit();
     renderRecent();
   } catch (err) {
     toast('提交失败: ' + err.message, true);
@@ -164,7 +270,7 @@ $('#form-consume').addEventListener('submit', e => handleRecordSubmit(e, 'materi
   return {
     material_id: fd.get('material_id') || null,
     qty: Number(fd.get('qty')),
-    unit_price_snapshot: mat ? mat.unit_price : 0,
+    unit_price_snapshot: mat ? pricePerBaseUnit(mat) : 0,
     note: fd.get('note') || null,
     photo_url: photo
   };
@@ -188,9 +294,11 @@ $('#form-ship').addEventListener('submit', e => handleRecordSubmit(e, 'shipment_
 $('#form-purchase').addEventListener('submit', e => handleRecordSubmit(e, 'material_purchases', (fd, photo) => {
   const mat = materials.find(m => m.id === fd.get('material_id'));
   const price = fd.get('unit_price');
+  const qty = Number(fd.get('qty'));
   return {
     material_id: fd.get('material_id') || null,
-    qty: Number(fd.get('qty')),
+    qty,
+    qty_base: mat && isGramTracked(mat) ? qty * mat.pack_qty_grams : qty,
     unit_price: price ? Number(price) : (mat ? mat.unit_price : 0),
     note: fd.get('note') || null,
     photo_url: photo
@@ -208,10 +316,10 @@ async function renderRecent() {
     sb.from('material_purchases').select('*').order('created_at', { ascending: false }).limit(5)
   ]);
   const items = [
-    ...(c.data || []).map(r => ({ ...r, kind: '消耗', label: materialName(r.material_id) })),
-    ...(p.data || []).map(r => ({ ...r, kind: '生产', label: productName(r.product_id) })),
-    ...(s.data || []).map(r => ({ ...r, kind: '出货', label: productName(r.product_id) })),
-    ...(pu.data || []).map(r => ({ ...r, kind: '入库', label: materialName(r.material_id) }))
+    ...(c.data || []).map(r => { const m = materials.find(x => x.id === r.material_id); return { ...r, kind: '消耗', label: materialName(r.material_id), qtyLabel: isGramTracked(m) ? formatWeight(r.qty) : num(r.qty) }; }),
+    ...(p.data || []).map(r => ({ ...r, kind: '生产', label: productName(r.product_id), qtyLabel: num(r.qty) })),
+    ...(s.data || []).map(r => ({ ...r, kind: '出货', label: productName(r.product_id), qtyLabel: num(r.qty) })),
+    ...(pu.data || []).map(r => { const m = materials.find(x => x.id === r.material_id); return { ...r, kind: '入库', label: materialName(r.material_id), qtyLabel: num(r.qty) + (m ? ' ' + m.unit : '') }; })
   ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 10);
 
   if (!items.length) { box.innerHTML = '<p class="text-sm text-gray-400">还没有记录</p>'; return; }
@@ -222,7 +330,7 @@ async function renderRecent() {
         <div class="text-sm font-medium">${it.kind} · ${it.label}</div>
         <div class="text-xs text-gray-400">${fmtTime(it.created_at)}${it.note ? ' · ' + it.note : ''}</div>
       </div>
-      <div class="text-sm font-semibold text-teal-700">${num(it.qty)}</div>
+      <div class="text-sm font-semibold text-teal-700">${it.qtyLabel}</div>
     </div>
   `).join('');
 }
@@ -230,10 +338,13 @@ async function renderRecent() {
 // -------------------- 库存 --------------------
 async function computeMaterialStock() {
   const [purchases, consumptions] = await Promise.all([
-    sb.from('material_purchases').select('material_id, qty'),
+    sb.from('material_purchases').select('material_id, qty, qty_base'),
     sb.from('material_consumptions').select('material_id, qty')
   ]);
-  const pMap = sumBy(purchases.data, 'material_id', 'qty');
+  // qty_base 是换算成库存计量单位(克重类=克,否则=采购单位)后的入库数量;
+  // 旧记录没有 qty_base 时退回用 qty(等价于未换算前的行为)。
+  const normalizedPurchases = (purchases.data || []).map(r => ({ material_id: r.material_id, qty: r.qty_base != null ? r.qty_base : r.qty }));
+  const pMap = sumBy(normalizedPurchases, 'material_id', 'qty');
   const cMap = sumBy(consumptions.data, 'material_id', 'qty');
   return materials.map(m => ({ ...m, stock: (m.opening_stock || 0) + (pMap[m.id] || 0) - (cMap[m.id] || 0) }));
 }
@@ -253,8 +364,8 @@ async function renderStock() {
   $('#materialStockTable tbody').innerHTML = mStock.map(m => `
     <tr class="border-t ${m.stock <= m.reorder_threshold ? 'bg-red-50' : ''}">
       <td class="px-3 py-2">${m.name}</td>
-      <td class="px-3 py-2 text-right ${m.stock <= m.reorder_threshold ? 'text-red-600 font-semibold' : ''}">${num(m.stock)} ${m.unit}</td>
-      <td class="px-3 py-2 text-right text-gray-400">${num(m.reorder_threshold)}</td>
+      <td class="px-3 py-2 text-right ${m.stock <= m.reorder_threshold ? 'text-red-600 font-semibold' : ''}">${isGramTracked(m) ? formatWeight(m.stock) : num(m.stock) + ' ' + m.unit}</td>
+      <td class="px-3 py-2 text-right text-gray-400">${isGramTracked(m) ? formatWeight(m.reorder_threshold) : num(m.reorder_threshold)}</td>
     </tr>`).join('') || `<tr><td class="px-3 py-3 text-gray-400" colspan="3">暂无原材料,请先到设置中添加</td></tr>`;
 
   $('#productStockTable tbody').innerHTML = pStock.map(p => `
@@ -334,38 +445,129 @@ async function renderDaily() {
         <div class="text-lg font-semibold text-teal-700">${p.data.length} / ${s.data.length}</div>
       </div>
     </div>
-    ${section('原材料消耗', c.data || [], r => `<div class="flex justify-between border-b pb-1"><span>${materialName(r.material_id)}${r.note ? ' · ' + r.note : ''}</span><span>${num(r.qty)}</span></div>`)}
+    ${section('原材料消耗', c.data || [], r => { const m = materials.find(x => x.id === r.material_id); return `<div class="flex justify-between border-b pb-1"><span>${materialName(r.material_id)}${r.note ? ' · ' + r.note : ''}</span><span>${isGramTracked(m) ? formatWeight(r.qty) : num(r.qty)}</span></div>`; })}
     ${section('生产记录', p.data || [], r => `<div class="flex justify-between border-b pb-1"><span>${productName(r.product_id)}${r.note ? ' · ' + r.note : ''}</span><span>${num(r.qty)}</span></div>`)}
     ${section('出货记录', s.data || [], r => `<div class="flex justify-between border-b pb-1"><span>${productName(r.product_id)}${r.destination ? ' → ' + r.destination : ''}</span><span>${num(r.qty)}</span></div>`)}
-    ${section('原材料入库', pu.data || [], r => `<div class="flex justify-between border-b pb-1"><span>${materialName(r.material_id)}${r.note ? ' · ' + r.note : ''}</span><span>${num(r.qty)}</span></div>`)}
+    ${section('原材料入库', pu.data || [], r => { const m = materials.find(x => x.id === r.material_id); return `<div class="flex justify-between border-b pb-1"><span>${materialName(r.material_id)}${r.note ? ' · ' + r.note : ''}</span><span>${num(r.qty)} ${m ? m.unit : ''}</span></div>`; })}
     <div class="bg-white rounded-xl p-4 shadow-sm">
       <h3 class="font-medium mb-2">当日结束库存快照</h3>
       <div class="text-sm space-y-1">
-        ${mStock.map(m => `<div class="flex justify-between"><span>${m.name}</span><span class="${m.stock <= m.reorder_threshold ? 'text-red-600 font-semibold' : ''}">${num(m.stock)} ${m.unit}</span></div>`).join('')}
+        ${mStock.map(m => `<div class="flex justify-between"><span>${m.name}</span><span class="${m.stock <= m.reorder_threshold ? 'text-red-600 font-semibold' : ''}">${isGramTracked(m) ? formatWeight(m.stock) : num(m.stock) + ' ' + m.unit}</span></div>`).join('')}
         ${pStock.map(p2 => `<div class="flex justify-between"><span>${p2.name}</span><span class="${p2.stock <= p2.reorder_threshold ? 'text-red-600 font-semibold' : ''}">${num(p2.stock)} ${p2.unit}</span></div>`).join('')}
       </div>
     </div>
   `;
 
-  $('#exportDailyBtn').onclick = () => exportDaily(dateStr, c.data || [], p.data || [], s.data || [], pu.data || [], cost);
+  lastDaily = { dateStr, c: c.data || [], p: p.data || [], s: s.data || [], pu: pu.data || [], cost, mStock, pStock };
 }
 $('#dailyDate').addEventListener('change', renderDaily);
 
-function exportDaily(dateStr, c, p, s, pu, cost) {
-  const lines = [`日报 ${dateStr}`, `当日原材料成本: ${money(cost)}`, '', '【原材料消耗】'];
-  c.forEach(r => lines.push(`${materialName(r.material_id)}\t${num(r.qty)}\t${r.note || ''}`));
-  lines.push('', '【生产记录】');
-  p.forEach(r => lines.push(`${productName(r.product_id)}\t${num(r.qty)}\t${r.note || ''}`));
-  lines.push('', '【出货记录】');
-  s.forEach(r => lines.push(`${productName(r.product_id)}\t${num(r.qty)}\t${r.destination || ''}\t${r.note || ''}`));
-  lines.push('', '【原材料入库】');
-  pu.forEach(r => lines.push(`${materialName(r.material_id)}\t${num(r.qty)}\t${r.note || ''}`));
-  const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+// -------------------- 日报导出: PDF(打印模板) / CSV --------------------
+function rptRows(cols, rows, emptyText) {
+  if (!rows.length) return `<div class="rpt-empty">${emptyText}</div>`;
+  return `<table class="rpt-table"><thead><tr>${cols.map(c => `<th class="${c.num ? 'num' : ''}">${c.label}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map(r => `<tr>${cols.map(c => `<td class="${c.num ? 'num' : ''}">${c.get(r)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+}
+
+function buildDailyReportHTML(d) {
+  const genTime = new Date().toLocaleString('zh-CN');
+  const consumeRows = d.c.map(r => {
+    const m = materials.find(x => x.id === r.material_id);
+    return { name: materialName(r.material_id), qty: isGramTracked(m) ? formatWeight(r.qty) : num(r.qty), price: money(r.unit_price_snapshot) + (isGramTracked(m) ? '/g' : ''), subtotal: money(Number(r.qty) * Number(r.unit_price_snapshot || 0)), note: r.note || '' };
+  });
+  const prodRows = d.p.map(r => ({ name: productName(r.product_id), qty: num(r.qty), note: r.note || '' }));
+  const shipRows = d.s.map(r => ({ name: productName(r.product_id), qty: num(r.qty), dest: r.destination || '', note: r.note || '' }));
+  const purchaseRows = d.pu.map(r => {
+    const m = materials.find(x => x.id === r.material_id);
+    return { name: materialName(r.material_id), qty: num(r.qty) + ' ' + (m ? m.unit : ''), price: money(r.unit_price), note: r.note || '' };
+  });
+
+  const stockRows = [
+    ...d.mStock.map(m => ({ name: m.name, qty: isGramTracked(m) ? formatWeight(m.stock) : num(m.stock) + ' ' + m.unit, low: m.stock <= m.reorder_threshold })),
+    ...d.pStock.map(p => ({ name: p.name, qty: num(p.stock) + ' ' + p.unit, low: p.stock <= p.reorder_threshold }))
+  ];
+
+  return `
+    <div style="font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; color:#111827;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-end; border-bottom:3px solid #0f766e; padding-bottom:10px; margin-bottom:14px;">
+        <div>
+          <div style="font-size:18px; font-weight:700;">${CFG.BUSINESS_NAME || '电子台账'}</div>
+          <div style="font-size:13px; color:#6b7280; margin-top:2px;">每日台账报告 · Daily Ledger Report</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:20px; font-weight:700; color:#0f766e;">${d.dateStr}</div>
+          <div style="font-size:11px; color:#9ca3af;">生成时间 ${genTime}</div>
+        </div>
+      </div>
+
+      <div style="display:flex; gap:10px; margin-bottom:16px;">
+        <div style="flex:1; border:1px solid #d1d5db; border-radius:8px; padding:10px; text-align:center;">
+          <div style="font-size:11px; color:#6b7280;">当日原材料成本</div>
+          <div style="font-size:18px; font-weight:700; color:#0f766e;">${money(d.cost)}</div>
+        </div>
+        <div style="flex:1; border:1px solid #d1d5db; border-radius:8px; padding:10px; text-align:center;">
+          <div style="font-size:11px; color:#6b7280;">生产笔数</div>
+          <div style="font-size:18px; font-weight:700;">${d.p.length}</div>
+        </div>
+        <div style="flex:1; border:1px solid #d1d5db; border-radius:8px; padding:10px; text-align:center;">
+          <div style="font-size:11px; color:#6b7280;">出货笔数</div>
+          <div style="font-size:18px; font-weight:700;">${d.s.length}</div>
+        </div>
+      </div>
+
+      <div style="font-size:13px; font-weight:700; margin:14px 0 6px;">原材料消耗</div>
+      ${rptRows([{ label: '原材料', get: r => r.name }, { label: '数量', get: r => r.qty, num: true }, { label: '单价', get: r => r.price, num: true }, { label: '小计', get: r => r.subtotal, num: true }, { label: '备注', get: r => r.note }], consumeRows, '当日无消耗记录')}
+
+      <div style="font-size:13px; font-weight:700; margin:14px 0 6px;">生产记录</div>
+      ${rptRows([{ label: '产品', get: r => r.name }, { label: '数量', get: r => r.qty, num: true }, { label: '备注', get: r => r.note }], prodRows, '当日无生产记录')}
+
+      <div style="font-size:13px; font-weight:700; margin:14px 0 6px;">出货记录</div>
+      ${rptRows([{ label: '产品', get: r => r.name }, { label: '数量', get: r => r.qty, num: true }, { label: '发往', get: r => r.dest }, { label: '备注', get: r => r.note }], shipRows, '当日无出货记录')}
+
+      <div style="font-size:13px; font-weight:700; margin:14px 0 6px;">原材料入库</div>
+      ${rptRows([{ label: '原材料', get: r => r.name }, { label: '数量', get: r => r.qty, num: true }, { label: '采购单价', get: r => r.price, num: true }, { label: '备注', get: r => r.note }], purchaseRows, '当日无入库记录')}
+
+      <div style="font-size:13px; font-weight:700; margin:14px 0 6px;">当日结束库存快照</div>
+      <table class="rpt-table">
+        <thead><tr><th>品项</th><th class="num">剩余库存</th></tr></thead>
+        <tbody>${stockRows.map(r => `<tr><td>${r.name}</td><td class="num" style="${r.low ? 'color:#dc2626; font-weight:700;' : ''}">${r.qty}</td></tr>`).join('')}</tbody>
+      </table>
+
+      <div style="margin-top:18px; font-size:10px; color:#9ca3af; text-align:center;">由电子台账系统自动生成</div>
+    </div>`;
+}
+
+function exportDailyPDF() {
+  if (!lastDaily) return;
+  $('#printArea').innerHTML = buildDailyReportHTML(lastDaily);
+  window.print();
+}
+
+function csvCell(v) {
+  const s = String(v ?? '');
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+function exportDailyCSV() {
+  if (!lastDaily) return;
+  const d = lastDaily;
+  const rows = [['类型', '品项', '数量', '单价/成本', '备注/发往', '时间']];
+  d.c.forEach(r => { const m = materials.find(x => x.id === r.material_id); rows.push(['原材料消耗', materialName(r.material_id), isGramTracked(m) ? formatWeight(r.qty) : num(r.qty), money(r.unit_price_snapshot), r.note || '', fmtTime(r.created_at)]); });
+  d.p.forEach(r => rows.push(['生产', productName(r.product_id), num(r.qty), '', r.note || '', fmtTime(r.created_at)]));
+  d.s.forEach(r => rows.push(['出货', productName(r.product_id), num(r.qty), '', r.destination || '', fmtTime(r.created_at)]));
+  d.pu.forEach(r => { const m = materials.find(x => x.id === r.material_id); rows.push(['原材料入库', materialName(r.material_id), num(r.qty) + ' ' + (m ? m.unit : ''), money(r.unit_price), r.note || '', fmtTime(r.created_at)]); });
+  rows.push([]);
+  rows.push(['当日原材料成本', money(d.cost)]);
+  const csv = '﻿' + rows.map(row => row.map(csvCell).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `日报_${dateStr}.txt`;
+  a.download = `日报_${d.dateStr}.csv`;
   a.click();
 }
+
+$('#exportDailyPdfBtn').addEventListener('click', exportDailyPDF);
+$('#exportDailyCsvBtn').addEventListener('click', exportDailyCSV);
 
 // -------------------- 总览 --------------------
 async function renderOverview() {
@@ -461,11 +663,13 @@ async function renderMaterialTable() {
   const { data } = await sb.from('materials').select('*').order('archived').order('name');
   $('#materialTable tbody').innerHTML = (data || []).map(m => `
     <tr class="border-t ${m.archived ? 'opacity-40' : ''}">
+      <td class="px-2 py-2 text-gray-400">${m.item_code || ''}</td>
       <td class="px-2 py-2">${m.name}</td>
       <td class="px-2 py-2 text-center">${m.unit}</td>
       <td class="px-2 py-2 text-center">${money(m.unit_price)}</td>
-      <td class="px-2 py-2 text-center">${num(m.reorder_threshold)}</td>
-      <td class="px-2 py-2 text-center">${num(m.opening_stock)}</td>
+      <td class="px-2 py-2 text-center">${isGramTracked(m) ? money(pricePerBaseUnit(m)) + '/g' : '—'}</td>
+      <td class="px-2 py-2 text-center">${isGramTracked(m) ? formatWeight(m.reorder_threshold) : num(m.reorder_threshold)}</td>
+      <td class="px-2 py-2 text-center">${isGramTracked(m) ? formatWeight(m.opening_stock) : num(m.opening_stock)}</td>
       <td class="px-2 py-2 text-right whitespace-nowrap">
         <button class="text-teal-700 text-xs mr-2" onclick="editMaterial('${m.id}')">编辑</button>
         <button class="text-gray-400 text-xs" onclick="toggleArchiveMaterial('${m.id}', ${!m.archived})">${m.archived ? '恢复' : '归档'}</button>
@@ -477,8 +681,9 @@ window.editMaterial = async function (id) {
   const { data: m } = await sb.from('materials').select('*').eq('id', id).single();
   if (!m) return;
   const f = $('#materialForm');
-  f.id.value = m.id; f.name.value = m.name; f.unit.value = m.unit;
-  f.unit_price.value = m.unit_price; f.reorder_threshold.value = m.reorder_threshold; f.opening_stock.value = m.opening_stock;
+  f.id.value = m.id; f.item_code.value = m.item_code || ''; f.name.value = m.name; f.unit.value = m.unit;
+  f.unit_price.value = m.unit_price; f.pack_qty_grams.value = m.pack_qty_grams || '';
+  f.reorder_threshold.value = m.reorder_threshold; f.opening_stock.value = m.opening_stock;
   $('#materialCancelEdit').classList.remove('hidden');
   window.scrollTo({ top: 0, behavior: 'smooth' });
 };
@@ -493,9 +698,12 @@ $('#materialForm').addEventListener('submit', async e => {
   e.preventDefault();
   const fd = new FormData(e.target);
   const id = fd.get('id');
+  const packQty = fd.get('pack_qty_grams');
   const row = {
+    item_code: fd.get('item_code') || null,
     name: fd.get('name'), unit: fd.get('unit'),
     unit_price: Number(fd.get('unit_price')) || 0,
+    pack_qty_grams: packQty ? Number(packQty) : null,
     reorder_threshold: Number(fd.get('reorder_threshold')) || 0,
     opening_stock: Number(fd.get('opening_stock')) || 0
   };
@@ -558,6 +766,7 @@ $('#productForm').addEventListener('submit', async e => {
 
 // -------------------- 启动 --------------------
 (async function start() {
+  initRoleGate();
   if (!initSupabase()) return;
   $('#dailyDate').value = todayStr();
   await Promise.all([loadMaterials(), loadProducts()]);

@@ -6,14 +6,20 @@
 -- 原材料库
 create table if not exists materials (
   id uuid primary key default gen_random_uuid(),
+  item_code text,          -- 对应你原有采购系统里的 Item Code(如 W-1004),可为空
   name text not null,
-  unit text not null,
-  unit_price numeric not null default 0,      -- 成本单价
-  reorder_threshold numeric not null default 0, -- 预警线,低于此值标红
-  opening_stock numeric not null default 0,    -- 期初库存
+  unit text not null,      -- 采购单位(如 BAG/CTN/PKT),入库时按这个单位计数
+  unit_price numeric not null default 0,      -- 成本单价(每 1 个采购单位,如每 BAG)
+  pack_qty_grams numeric,  -- 每 1 个采购单位换算多少克(如 1 BAG=50KG 就填 50000);
+                           -- 留空/0 表示该原材料不按克追踪,消耗/库存仍按 unit 计
+  reorder_threshold numeric not null default 0, -- 预警线(克重类原材料按克,否则按 unit)
+  opening_stock numeric not null default 0,    -- 期初库存(克重类原材料按克,否则按 unit)
   archived boolean not null default false,
   created_at timestamptz not null default now()
 );
+-- 如果 materials 表是在加这些字段之前建的,补一条:
+alter table materials add column if not exists item_code text;
+alter table materials add column if not exists pack_qty_grams numeric;
 
 -- 产品库
 create table if not exists products (
@@ -41,19 +47,23 @@ create table if not exists product_recipe (
 create table if not exists material_purchases (
   id uuid primary key default gen_random_uuid(),
   material_id uuid references materials(id) on delete set null,
-  qty numeric not null,
-  unit_price numeric,       -- 本次采购单价,留空则用原材料当前单价
+  qty numeric not null,     -- 按采购单位计的数量(如买了几 BAG),给人看的
+  qty_base numeric,         -- 换算成库存计量单位后的数量(克重类原材料=qty*pack_qty_grams,
+                             -- 否则等于 qty);库存计算用这个字段,不用 qty
+  unit_price numeric,       -- 本次采购单价(每 1 个采购单位),留空则用原材料当前单价
   note text,
   photo_url text,
   created_at timestamptz not null default now()
 );
+alter table material_purchases add column if not exists qty_base numeric;
 
 -- 原材料消耗 (每日记录)
 create table if not exists material_consumptions (
   id uuid primary key default gen_random_uuid(),
   material_id uuid references materials(id) on delete set null,
-  qty numeric not null,
-  unit_price_snapshot numeric not null default 0, -- 记录当时的单价,成本计算更准确
+  qty numeric not null,     -- 克重类原材料=消耗的克数;否则按 unit 计
+  unit_price_snapshot numeric not null default 0, -- 记录当时"每 1 个 qty 单位"的单价
+                             -- (克重类=每克成本,否则=每 unit 成本),成本计算更准确
   note text,
   photo_url text,
   created_at timestamptz not null default now()
