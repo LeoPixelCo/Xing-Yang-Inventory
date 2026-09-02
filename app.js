@@ -71,6 +71,14 @@ function fmtTime(iso) {
 let currentRole = null; // 'boss' | 'staff'
 const STAFF_ALLOWED_TABS = ['record'];
 
+// 有些浏览器(比如 iOS Safari 开了"阻止所有 Cookie")会让 localStorage 直接抛错,
+// 这里包一层,读写失败就退化成"这次打开先不记住身份",不让整个解锁流程卡死。
+const safeStorage = {
+  get(key) { try { return localStorage.getItem(key); } catch (e) { return null; } },
+  set(key, val) { try { localStorage.setItem(key, val); } catch (e) { /* 忽略,不阻塞解锁 */ } },
+  remove(key) { try { localStorage.removeItem(key); } catch (e) { /* 忽略 */ } }
+};
+
 function applyRole(role) {
   currentRole = role;
   const isStaff = role === 'staff';
@@ -83,7 +91,7 @@ function applyRole(role) {
 }
 
 function unlock(role) {
-  localStorage.setItem('ledger_role', role);
+  safeStorage.set('ledger_role', role);
   $('#lockScreen').classList.add('hidden');
   applyRole(role);
 }
@@ -100,12 +108,12 @@ $('#lockForm').addEventListener('submit', e => {
 });
 
 $('#switchRoleBtn').addEventListener('click', () => {
-  localStorage.removeItem('ledger_role');
+  safeStorage.remove('ledger_role');
   location.reload();
 });
 
 function initRoleGate() {
-  const saved = localStorage.getItem('ledger_role');
+  const saved = safeStorage.get('ledger_role');
   if (saved === 'boss' || saved === 'staff') {
     $('#lockScreen').classList.add('hidden');
     applyRole(saved);
