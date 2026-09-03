@@ -76,6 +76,7 @@
       <button data-sub="produce" class="subtab-btn whitespace-nowrap px-3 py-1.5 rounded-full border border-teal-700 text-teal-700 text-sm" data-i18n="subProduce">生产记录</button>
       <button data-sub="ship" class="subtab-btn whitespace-nowrap px-3 py-1.5 rounded-full border border-teal-700 text-teal-700 text-sm" data-i18n="subShip">出货记录</button>
       <button data-sub="purchase" class="subtab-btn whitespace-nowrap px-3 py-1.5 rounded-full border border-teal-700 text-teal-700 text-sm" data-i18n="subPurchase">原材料入库</button>
+      <button data-sub="cashbuy" class="subtab-btn whitespace-nowrap px-3 py-1.5 rounded-full border border-teal-700 text-teal-700 text-sm" data-i18n="subCashBuy">现金采购</button>
     </div>
 
     <!-- 消耗 -->
@@ -169,6 +170,42 @@
         <textarea name="note" class="w-full mt-1 border rounded-lg px-3 py-2" rows="2"></textarea>
       </div>
       <button type="submit" class="w-full bg-teal-700 text-white rounded-lg py-2.5 font-medium" data-i18n="btnSubmitPurchase">提交入库记录</button>
+    </form>
+
+    <!-- 现金采购(不走供应商发票,自己/员工掏现金买的) -->
+    <form id="form-cashbuy" class="record-form hidden space-y-3 bg-white rounded-xl p-4 shadow-sm">
+      <div>
+        <label class="text-sm text-gray-500" data-i18n="lblSupplier">从哪里买的</label>
+        <input name="supplier" type="text" class="w-full mt-1 border rounded-lg px-3 py-2" data-i18n-ph="phOptional" placeholder="选填" />
+      </div>
+      <div>
+        <label class="text-sm text-gray-500" data-i18n="lblItemName">品名</label>
+        <input name="item_name" type="text" required class="w-full mt-1 border rounded-lg px-3 py-2" />
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <div>
+          <label class="text-sm text-gray-500" data-i18n="lblQty">数量</label>
+          <input name="qty" type="number" step="any" min="0" required class="w-full mt-1 border rounded-lg px-3 py-2" placeholder="0" />
+        </div>
+        <div>
+          <label class="text-sm text-gray-500" data-i18n="lblUnit">单位</label>
+          <input name="unit" type="text" required class="w-full mt-1 border rounded-lg px-3 py-2" placeholder="KG / PKT / ..." />
+        </div>
+      </div>
+      <div>
+        <label class="text-sm text-gray-500" data-i18n="lblUnitPrice">单价 (RM)</label>
+        <input name="unit_price" type="number" step="any" min="0" required class="w-full mt-1 border rounded-lg px-3 py-2" placeholder="0" />
+      </div>
+      <div>
+        <label class="text-sm text-gray-500" data-i18n="lblPhoto">照片</label>
+        <input name="photo" type="file" accept="image/*" capture="environment" class="w-full mt-1 text-sm" />
+        <p class="text-xs text-gray-400 mt-1" data-i18n="cashBuyReceiptHint">建议拍收据,方便报销对账</p>
+      </div>
+      <div>
+        <label class="text-sm text-gray-500" data-i18n="lblNote">备注</label>
+        <textarea name="note" class="w-full mt-1 border rounded-lg px-3 py-2" rows="2"></textarea>
+      </div>
+      <button type="submit" class="w-full bg-teal-700 text-white rounded-lg py-2.5 font-medium" data-i18n="btnSubmitCashBuy">提交现金采购记录</button>
     </form>
 
     <div class="mt-4">
@@ -382,7 +419,7 @@
 
 <div id="printArea"></div>
 
-<script src="config.js?v=1788348669"></script>
-<script src="app.js?v=1788348669"></script>
+<script src="config.js?v=1788433592"></script>
+<script src="app.js?v=1788433592"></script>
 </body>
 </html>

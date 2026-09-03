@@ -36,6 +36,7 @@ const I18N = {
   subProduce: { zh: '生产记录', my: 'ထုတ်လုပ်မှု', id: 'Produksi' },
   subShip: { zh: '出货记录', my: 'ကုန်ပို့မှု', id: 'Pengiriman' },
   subPurchase: { zh: '原材料入库', my: 'ကုန်သွင်းမှု', id: 'Terima Bahan' },
+  subCashBuy: { zh: '现金采购', my: 'ငွေသားဝယ်ယူမှု', id: 'Beli Tunai' },
   lblMaterial: { zh: '原材料', my: 'ကုန်ကြမ်းပစ္စည်း', id: 'Bahan Baku' },
   lblProduct: { zh: '产品', my: 'ကုန်ချောပစ္စည်း', id: 'Produk' },
   lblQty: { zh: '数量', my: 'အရေအတွက်', id: 'Jumlah' },
@@ -43,11 +44,17 @@ const I18N = {
   lblDestination: { zh: '发往哪里', my: 'ဘယ်နေရာကို ပို့မလဲ', id: 'Dikirim ke mana' },
   lblPhoto: { zh: '照片', my: 'ဓာတ်ပုံ', id: 'Foto' },
   lblNote: { zh: '备注', my: 'မှတ်ချက်', id: 'Catatan' },
+  lblSupplier: { zh: '从哪里买的', my: 'ဘယ်ကနေဝယ်တာလဲ', id: 'Beli dari mana' },
+  lblItemName: { zh: '品名', my: 'ပစ္စည်းအမည်', id: 'Nama Barang' },
+  lblUnit: { zh: '单位', my: 'ယူနစ်', id: 'Satuan' },
+  lblUnitPrice: { zh: '单价 (RM)', my: 'ဈေးနှုန်း (RM)', id: 'Harga Satuan (RM)' },
+  cashBuyReceiptHint: { zh: '建议拍收据,方便报销对账', my: 'ငွေတောင်းလက်မှတ်ဓာတ်ပုံ ရိုက်ထားရင် ပိုကောင်းပါတယ်', id: 'Sebaiknya foto struk untuk klaim' },
   phOptional: { zh: '选填', my: 'မဖြည့်လည်းရ', id: 'opsional' },
   btnSubmitConsume: { zh: '提交消耗记录', my: 'မှတ်တမ်းပို့ရန်', id: 'Kirim' },
   btnSubmitProduce: { zh: '提交生产记录', my: 'မှတ်တမ်းပို့ရန်', id: 'Kirim' },
   btnSubmitShip: { zh: '提交出货记录', my: 'မှတ်တမ်းပို့ရန်', id: 'Kirim' },
   btnSubmitPurchase: { zh: '提交入库记录', my: 'မှတ်တမ်းပို့ရန်', id: 'Kirim' },
+  btnSubmitCashBuy: { zh: '提交现金采购记录', my: 'မှတ်တမ်းပို့ရန်', id: 'Kirim' },
   recentTitle: { zh: '最近记录', my: 'မကြာသေးမီက မှတ်တမ်းများ', id: 'Catatan Terbaru' },
   recentEmpty: { zh: '还没有记录', my: 'မှတ်တမ်း မရှိသေးပါ', id: 'Belum ada catatan' },
   loadingText: { zh: '加载中…', my: 'ဖွင့်နေသည်…', id: 'Memuat…' },
@@ -403,21 +410,33 @@ $('#form-purchase').addEventListener('submit', e => handleRecordSubmit(e, 'mater
   };
 }));
 
+$('#form-cashbuy').addEventListener('submit', e => handleRecordSubmit(e, 'cash_purchases', (fd, photo) => ({
+  supplier: fd.get('supplier') || null,
+  item_name: fd.get('item_name'),
+  qty: Number(fd.get('qty')),
+  unit: fd.get('unit'),
+  unit_price: Number(fd.get('unit_price')) || 0,
+  note: fd.get('note') || null,
+  photo_url: photo
+})));
+
 // -------------------- 最近记录 --------------------
 async function renderRecent() {
   const box = $('#recentList');
   box.innerHTML = `<p class="text-sm text-gray-400">${t('loadingText')}</p>`;
-  const [c, p, s, pu] = await Promise.all([
+  const [c, p, s, pu, cb] = await Promise.all([
     sb.from('material_consumptions').select('*').order('created_at', { ascending: false }).limit(5),
     sb.from('production_records').select('*').order('created_at', { ascending: false }).limit(5),
     sb.from('shipment_records').select('*').order('created_at', { ascending: false }).limit(5),
-    sb.from('material_purchases').select('*').order('created_at', { ascending: false }).limit(5)
+    sb.from('material_purchases').select('*').order('created_at', { ascending: false }).limit(5),
+    sb.from('cash_purchases').select('*').order('created_at', { ascending: false }).limit(5)
   ]);
   const items = [
     ...(c.data || []).map(r => { const m = materials.find(x => x.id === r.material_id); return { ...r, kind: t('subConsume'), label: materialName(r.material_id), qtyLabel: isGramTracked(m) ? formatWeight(r.qty) : num(r.qty), table: 'material_consumptions' }; }),
     ...(p.data || []).map(r => ({ ...r, kind: t('subProduce'), label: productName(r.product_id), qtyLabel: num(r.qty), table: 'production_records' })),
     ...(s.data || []).map(r => ({ ...r, kind: t('subShip'), label: productName(r.product_id), qtyLabel: num(r.qty), table: 'shipment_records' })),
-    ...(pu.data || []).map(r => { const m = materials.find(x => x.id === r.material_id); return { ...r, kind: t('subPurchase'), label: materialName(r.material_id), qtyLabel: num(r.qty) + (m ? ' ' + m.unit : ''), table: 'material_purchases' }; })
+    ...(pu.data || []).map(r => { const m = materials.find(x => x.id === r.material_id); return { ...r, kind: t('subPurchase'), label: materialName(r.material_id), qtyLabel: num(r.qty) + (m ? ' ' + m.unit : ''), table: 'material_purchases' }; }),
+    ...(cb.data || []).map(r => ({ ...r, kind: t('subCashBuy'), label: r.item_name, qtyLabel: money(r.qty * r.unit_price), table: 'cash_purchases' }))
   ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 10);
 
   if (!items.length) { box.innerHTML = `<p class="text-sm text-gray-400">${t('recentEmpty')}</p>`; return; }
@@ -663,14 +682,16 @@ async function renderDaily() {
   $('#dailyDate').value = dateStr;
   const { startISO, endISO } = dayRangeISO(dateStr);
 
-  const [c, p, s, pu] = await Promise.all([
+  const [c, p, s, pu, cb] = await Promise.all([
     sb.from('material_consumptions').select('*').gte('created_at', startISO).lte('created_at', endISO).order('created_at'),
     sb.from('production_records').select('*').gte('created_at', startISO).lte('created_at', endISO).order('created_at'),
     sb.from('shipment_records').select('*').gte('created_at', startISO).lte('created_at', endISO).order('created_at'),
-    sb.from('material_purchases').select('*').gte('created_at', startISO).lte('created_at', endISO).order('created_at')
+    sb.from('material_purchases').select('*').gte('created_at', startISO).lte('created_at', endISO).order('created_at'),
+    sb.from('cash_purchases').select('*').gte('created_at', startISO).lte('created_at', endISO).order('created_at')
   ]);
 
   const cost = (c.data || []).reduce((sum, r) => sum + Number(r.qty) * Number(r.unit_price_snapshot || 0), 0);
+  const cashTotal = (cb.data || []).reduce((sum, r) => sum + Number(r.qty) * Number(r.unit_price || 0), 0);
   const [mStock, pStock] = await Promise.all([computeMaterialStock(), computeProductStock()]);
 
   const section = (title, rows, render) => `
@@ -690,11 +711,16 @@ async function renderDaily() {
         <div class="text-xs text-gray-400">生产 / 出货笔数</div>
         <div class="text-lg font-semibold text-teal-700">${p.data.length} / ${s.data.length}</div>
       </div>
+      <div class="bg-white rounded-xl p-3 shadow-sm text-center col-span-2">
+        <div class="text-xs text-gray-400">当日现金采购总额</div>
+        <div class="text-lg font-semibold text-teal-700">${money(cashTotal)}</div>
+      </div>
     </div>
     ${section('原材料消耗', c.data || [], r => { const m = materials.find(x => x.id === r.material_id); return `<div class="flex justify-between items-center border-b pb-1"><span>${materialName(r.material_id)}${r.note ? ' · ' + r.note : ''}</span><span>${isGramTracked(m) ? formatWeight(r.qty) : num(r.qty)}${delBtn('material_consumptions', r.id)}</span></div>`; })}
     ${section('生产记录', p.data || [], r => `<div class="flex justify-between items-center border-b pb-1"><span>${productName(r.product_id)}${r.note ? ' · ' + r.note : ''}</span><span>${num(r.qty)}${delBtn('production_records', r.id)}</span></div>`)}
     ${section('出货记录', s.data || [], r => `<div class="flex justify-between items-center border-b pb-1"><span>${productName(r.product_id)}${r.destination ? ' → ' + r.destination : ''}</span><span>${num(r.qty)}${delBtn('shipment_records', r.id)}</span></div>`)}
     ${section('原材料入库', pu.data || [], r => { const m = materials.find(x => x.id === r.material_id); return `<div class="flex justify-between items-center border-b pb-1"><span>${materialName(r.material_id)}${r.note ? ' · ' + r.note : ''}</span><span>${num(r.qty)} ${m ? m.unit : ''}${delBtn('material_purchases', r.id)}</span></div>`; })}
+    ${section('现金采购', cb.data || [], r => `<div class="flex justify-between items-center border-b pb-1"><span>${r.item_name}${r.supplier ? ' · ' + r.supplier : ''}${r.note ? ' · ' + r.note : ''}</span><span>${money(r.qty * r.unit_price)}${delBtn('cash_purchases', r.id)}</span></div>`)}
     <div class="bg-white rounded-xl p-4 shadow-sm">
       <h3 class="font-medium mb-2">当日结束库存快照 · 原材料</h3>
       <div class="text-sm space-y-1">
@@ -709,7 +735,7 @@ async function renderDaily() {
     </div>
   `;
 
-  lastDaily = { dateStr, c: c.data || [], p: p.data || [], s: s.data || [], pu: pu.data || [], cost, mStock, pStock };
+  lastDaily = { dateStr, c: c.data || [], p: p.data || [], s: s.data || [], pu: pu.data || [], cb: cb.data || [], cost, cashTotal, mStock, pStock };
 }
 $('#dailyDate').addEventListener('change', renderDaily);
 
@@ -732,6 +758,7 @@ function buildDailyReportHTML(d) {
     const m = materials.find(x => x.id === r.material_id);
     return { name: materialName(r.material_id), qty: num(r.qty) + ' ' + (m ? m.unit : ''), price: money(r.unit_price), note: r.note || '' };
   });
+  const cashBuyRows = d.cb.map(r => ({ name: r.item_name, supplier: r.supplier || '', qty: num(r.qty) + ' ' + r.unit, price: money(r.unit_price), subtotal: money(r.qty * r.unit_price), note: r.note || '' }));
 
   const mStockRows = d.mStock.map(m => ({ name: m.name, qty: isGramTracked(m) ? formatWeight(m.stock) : num(m.stock) + ' ' + m.unit, low: m.stock <= m.reorder_threshold }));
   const pStockRows = d.pStock.map(p => ({ name: p.name, qty: num(p.stock) + ' ' + p.unit, low: p.stock <= p.reorder_threshold }));
@@ -766,6 +793,10 @@ function buildDailyReportHTML(d) {
           <div style="font-size:11px; color:#6b7280;">出货笔数</div>
           <div style="font-size:18px; font-weight:700;">${d.s.length}</div>
         </div>
+        <div style="flex:1; border:1px solid #d1d5db; border-radius:8px; padding:10px; text-align:center;">
+          <div style="font-size:11px; color:#6b7280;">现金采购总额</div>
+          <div style="font-size:18px; font-weight:700; color:#0f766e;">${money(d.cashTotal)}</div>
+        </div>
       </div>
 
       <div style="font-size:13px; font-weight:700; margin:14px 0 6px;">原材料消耗</div>
@@ -779,6 +810,9 @@ function buildDailyReportHTML(d) {
 
       <div style="font-size:13px; font-weight:700; margin:14px 0 6px;">原材料入库</div>
       ${rptRows([{ label: '原材料', get: r => r.name }, { label: '数量', get: r => r.qty, num: true }, { label: '采购单价', get: r => r.price, num: true }, { label: '备注', get: r => r.note }], purchaseRows, '当日无入库记录')}
+
+      <div style="font-size:13px; font-weight:700; margin:14px 0 6px;">现金采购</div>
+      ${rptRows([{ label: '品名', get: r => r.name }, { label: '来源', get: r => r.supplier }, { label: '数量', get: r => r.qty, num: true }, { label: '单价', get: r => r.price, num: true }, { label: '小计', get: r => r.subtotal, num: true }, { label: '备注', get: r => r.note }], cashBuyRows, '当日无现金采购记录')}
 
       <div style="font-size:13px; font-weight:700; margin:14px 0 6px;">当日结束库存快照 · 原材料</div>
       ${stockTable(mStockRows)}
@@ -809,8 +843,10 @@ function exportDailyCSV() {
   d.p.forEach(r => rows.push(['生产', productName(r.product_id), num(r.qty), '', r.note || '', fmtTime(r.created_at)]));
   d.s.forEach(r => rows.push(['出货', productName(r.product_id), num(r.qty), '', r.destination || '', fmtTime(r.created_at)]));
   d.pu.forEach(r => { const m = materials.find(x => x.id === r.material_id); rows.push(['原材料入库', materialName(r.material_id), num(r.qty) + ' ' + (m ? m.unit : ''), money(r.unit_price), r.note || '', fmtTime(r.created_at)]); });
+  d.cb.forEach(r => rows.push(['现金采购', r.item_name, num(r.qty) + ' ' + r.unit, money(r.unit_price), [r.supplier, r.note].filter(Boolean).join(' · '), fmtTime(r.created_at)]));
   rows.push([]);
   rows.push(['当日原材料成本', money(d.cost)]);
+  rows.push(['当日现金采购总额', money(d.cashTotal)]);
   const csv = '﻿' + rows.map(row => row.map(csvCell).join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a');

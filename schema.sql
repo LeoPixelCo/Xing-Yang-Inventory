@@ -57,6 +57,23 @@ create table if not exists material_purchases (
 );
 alter table material_purchases add column if not exists qty_base numeric;
 
+-- 现金采购(自己/员工掏现金买的,不走供应商发票,单独记一笔方便报销/对账;
+-- 品名是自由填写的,不强制对应原材料库里的品项,因为很多是巴刹/杂货店零星采购)
+create table if not exists cash_purchases (
+  id uuid primary key default gen_random_uuid(),
+  supplier text,            -- 从哪里买的,选填(可能没有正式店名)
+  item_name text not null,  -- 品名(自由填写)
+  qty numeric not null,
+  unit text not null,
+  unit_price numeric not null default 0,
+  note text,
+  photo_url text,           -- 收据照片
+  created_at timestamptz not null default now()
+);
+alter table cash_purchases enable row level security;
+drop policy if exists "allow all" on cash_purchases;
+create policy "allow all" on cash_purchases for all using (true) with check (true);
+
 -- 原材料消耗 (每日记录)
 create table if not exists material_consumptions (
   id uuid primary key default gen_random_uuid(),
