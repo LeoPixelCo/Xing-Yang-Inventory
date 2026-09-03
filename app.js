@@ -305,24 +305,18 @@ $('#form-cashbuy input[name="unit_price"]')?.addEventListener('input', e => { e.
 // -------------------- 消耗表单:原材料 + 现金采购品项 两个来源 --------------------
 // 下拉的 value 用前缀区分:m:<id> = 原材料库,c:<id> = 现金采购品项。
 // 现金采购的品项不进"原材料入库"(那张表单只认原材料库),但用掉了要能记消耗、算成本。
-function loadConsumeOptions() {
-  const sel = $('#form-consume select[name="consume_target"]');
-  if (!sel) return;
-  const prev = sel.value;
-  const matOpts = materials.map(m => `<option value="m:${m.id}">${m.item_code ? m.item_code + ' ' : ''}${m.name}(${m.unit})</option>`).join('');
-  const cashOpts = cashItems.map(i => `<option value="c:${i.id}">${i.name}(${i.unit})</option>`).join('');
-  sel.innerHTML =
-    (matOpts ? `<optgroup label="${t('lblMaterial')}">${matOpts}</optgroup>` : '') +
-    (cashOpts ? `<optgroup label="${t('subCashBuy')}">${cashOpts}</optgroup>` : '') ||
-    `<option value="">${t('selectNoMaterial')}</option>`;
-  if (prev && sel.querySelector(`option[value="${prev}"]`)) sel.value = prev;
-  updateConsumeQtyUnit();
+// 下拉选项:分"原材料"和"现金采购"两组,value 用 m:/c: 前缀区分
+function targetOptionsHtml(selectedValue) {
+  const sel = v => v === selectedValue ? ' selected' : '';
+  const matOpts = materials.map(m => `<option value="m:${m.id}"${sel('m:' + m.id)}>${m.item_code ? m.item_code + ' ' : ''}${m.name}(${m.unit})</option>`).join('');
+  const cashOpts = cashItems.map(i => `<option value="c:${i.id}"${sel('c:' + i.id)}>${i.name}(${i.unit})</option>`).join('');
+  return (matOpts ? `<optgroup label="${t('lblMaterial')}">${matOpts}</optgroup>` : '') +
+         (cashOpts ? `<optgroup label="${t('subCashBuy')}">${cashOpts}</optgroup>` : '');
 }
 
-// 解析消耗下拉选中的东西,统一返回:是哪种、对象、计量单位、每单位成本、是否按克
-function consumeTarget() {
-  const sel = $('#form-consume select[name="consume_target"]');
-  const v = sel ? sel.value : '';
+// 解析 m:/c: 前缀的 value,统一返回:是哪种、对象、计量单位、每单位成本、是否按克
+function resolveTarget(v) {
+  if (!v) return null;
   if (v.startsWith('m:')) {
     const m = materials.find(x => x.id === v.slice(2));
     if (m) return { kind: 'material', obj: m, gram: isGramTracked(m), unit: stockUnitLabel(m), price: pricePerBaseUnit(m) };
@@ -332,6 +326,19 @@ function consumeTarget() {
     if (i) return { kind: 'cash', obj: i, gram: false, unit: i.unit, price: Number(i.last_price) || 0 };
   }
   return null;
+}
+
+function loadConsumeOptions() {
+  const sel = $('#form-consume select[name="consume_target"]');
+  if (!sel) return;
+  const prev = sel.value;
+  sel.innerHTML = targetOptionsHtml(prev) || `<option value="">${t('selectNoMaterial')}</option>`;
+  updateConsumeQtyUnit();
+}
+
+function consumeTarget() {
+  const sel = $('#form-consume select[name="consume_target"]');
+  return sel ? resolveTarget(sel.value) : null;
 }
 
 // -------------------- 克重换算:表单单位提示 --------------------
@@ -681,34 +688,33 @@ $('#costRangeSelect').addEventListener('change', renderCost);
 let calcRows = []; // [{ material_id, qty }]
 let calcRowSeq = 0;
 
-function calcMaterialOptions(selectedId) {
-  return materials.map(m => `<option value="${m.id}" ${m.id === selectedId ? 'selected' : ''}>${m.item_code ? m.item_code + ' ' : ''}${m.name}(${m.unit})</option>`).join('')
-    || '<option value="">(请先在设置中添加原材料)</option>';
+// 一行填的数量换算成"计价单位"的数量:克重类原材料选了 kg 就乘 1000
+function calcRowBaseQty(row) {
+  const qty = Number(row.qty) || 0;
+  const tgt = resolveTarget(row.target);
+  return (tgt && tgt.gram && row.unit === 'kg') ? qty * 1000 : qty;
 }
 
-// 一行填的数量换算成"计价单位"的数量:克重类原材料选了 kg 就乘 1000
-function calcRowBaseQty(row, m) {
-  const qty = Number(row.qty) || 0;
-  return (m && isGramTracked(m) && row.unit === 'kg') ? qty * 1000 : qty;
+function calcRowSubtotal(row) {
+  const tgt = resolveTarget(row.target);
+  return tgt ? calcRowBaseQty(row) * tgt.price : 0;
 }
 
 function renderCalcRows() {
   $('#calcRows').innerHTML = calcRows.map(row => {
-    const m = materials.find(x => x.id === row.material_id);
-    const gram = isGramTracked(m);
-    const subtotal = m ? calcRowBaseQty(row, m) * pricePerBaseUnit(m) : 0;
-    const unitCell = gram
+    const tgt = resolveTarget(row.target);
+    const unitCell = (tgt && tgt.gram)
       ? `<select class="calc-unit-select border rounded-lg px-1 py-1.5 text-xs w-14 shrink-0">
            <option value="g" ${row.unit !== 'kg' ? 'selected' : ''}>g</option>
            <option value="kg" ${row.unit === 'kg' ? 'selected' : ''}>kg</option>
          </select>`
-      : `<span class="calc-unit text-xs text-gray-400 w-14 shrink-0 text-center">${m ? m.unit : ''}</span>`;
+      : `<span class="calc-unit text-xs text-gray-400 w-14 shrink-0 text-center">${tgt ? tgt.unit : ''}</span>`;
     return `
     <div class="calc-row bg-white rounded-xl p-3 shadow-sm flex items-center gap-2" data-row="${row.rowId}">
-      <select class="calc-material flex-1 min-w-0 border rounded-lg px-2 py-1.5 text-sm">${calcMaterialOptions(row.material_id)}</select>
+      <select class="calc-material flex-1 min-w-0 border rounded-lg px-2 py-1.5 text-sm">${targetOptionsHtml(row.target) || `<option value="">${t('selectNoMaterial')}</option>`}</select>
       <input type="number" step="any" min="0" value="${row.qty || ''}" placeholder="0" class="calc-qty w-16 border rounded-lg px-2 py-1.5 text-sm text-right" />
       ${unitCell}
-      <span class="calc-subtotal text-sm font-medium text-teal-700 w-20 shrink-0 text-right">${money(subtotal)}</span>
+      <span class="calc-subtotal text-sm font-medium text-teal-700 w-20 shrink-0 text-right">${money(calcRowSubtotal(row))}</span>
       <button type="button" class="calc-remove text-red-600 text-xs shrink-0">✕</button>
     </div>`;
   }).join('') || '<p class="text-sm text-gray-400 text-center py-2">还没有添加原材料</p>';
@@ -718,11 +724,9 @@ function renderCalcRows() {
 function updateCalcTotals() {
   let total = 0;
   $all('.calc-row').forEach(rowEl => {
-    const rowId = rowEl.dataset.row;
-    const row = calcRows.find(r => String(r.rowId) === rowId);
+    const row = calcRows.find(r => String(r.rowId) === rowEl.dataset.row);
     if (!row) return;
-    const m = materials.find(x => x.id === row.material_id);
-    const subtotal = m ? calcRowBaseQty(row, m) * pricePerBaseUnit(m) : 0;
+    const subtotal = calcRowSubtotal(row);
     rowEl.querySelector('.calc-subtotal').textContent = money(subtotal);
     total += subtotal;
   });
@@ -744,8 +748,8 @@ $('#calcRows').addEventListener('change', e => {
   const row = calcRows.find(r => String(r.rowId) === rowEl.dataset.row);
   if (!row) return;
   if (e.target.classList.contains('calc-material')) {
-    row.material_id = e.target.value;
-    row.unit = 'g'; // 换了原材料就重置单位选择
+    row.target = e.target.value;
+    row.unit = 'g'; // 换了品项就重置单位选择
     renderCalcRows();  // 重画这行(可能要从"固定单位"变成 g/kg 下拉,或反过来)
   }
   if (e.target.classList.contains('calc-unit-select')) {
@@ -761,7 +765,7 @@ $('#calcRows').addEventListener('click', e => {
 });
 
 $('#calcAddRowBtn').addEventListener('click', () => {
-  calcRows.push({ rowId: ++calcRowSeq, material_id: materials[0] ? materials[0].id : '', qty: 0, unit: 'g' });
+  calcRows.push({ rowId: ++calcRowSeq, target: materials[0] ? 'm:' + materials[0].id : '', qty: 0, unit: 'g' });
   renderCalcRows();
 });
 $('#calcYield').addEventListener('input', updateCalcTotals);
@@ -797,7 +801,13 @@ $('#calcLoadBtn').addEventListener('click', async () => {
   const { data, error } = await sb.from('product_recipe').select('*').eq('product_id', productId);
   if (error) { toast('读取配方失败: ' + error.message, true); return; }
   // 配方里存的是"每份用量",克重类的存的是克数,载入时就用 g 显示
-  calcRows = (data || []).map(r => ({ rowId: ++calcRowSeq, material_id: r.material_id, qty: Number(r.qty_per_unit) || 0, unit: 'g' }));
+  calcRows = (data || []).map(r => ({
+    rowId: ++calcRowSeq,
+    target: r.cash_item_id ? 'c:' + r.cash_item_id : 'm:' + r.material_id,
+    // 每份用量可能除不尽(比如 2 包 ÷ 3 份),保留 4 位小数就够了,免得输入框里一长串
+    qty: Math.round((Number(r.qty_per_unit) || 0) * 10000) / 10000,
+    unit: 'g'
+  }));
   $('#calcYield').value = 1;
   renderCalcRows();
   toast('已载入配方');
@@ -808,7 +818,7 @@ $('#calcSaveBtn').addEventListener('click', async () => {
   if (!productId) return;
   const yield_ = Number($('#calcYield').value) || 0;
   if (yield_ <= 0) { toast('请先填写"这次产出数量"(大于0),才能换算成每份用量', true); return; }
-  const rows = calcRows.filter(r => r.material_id && r.qty > 0);
+  const rows = calcRows.filter(r => r.target && r.qty > 0);
   if (!rows.length) { toast('还没有添加任何原材料', true); return; }
   if (!confirm('保存后会覆盖这个产品之前保存的标准配方,确定吗?')) return;
   const btn = $('#calcSaveBtn');
@@ -818,8 +828,13 @@ $('#calcSaveBtn').addEventListener('click', async () => {
     if (delErr) throw delErr;
     // 存的是换算后的用量(克重类=克),跟消耗记录的计量方式一致
     const payload = rows.map(r => {
-      const m = materials.find(x => x.id === r.material_id);
-      return { product_id: productId, material_id: r.material_id, qty_per_unit: calcRowBaseQty(r, m) / yield_ };
+      const tgt = resolveTarget(r.target);
+      return {
+        product_id: productId,
+        material_id: tgt && tgt.kind === 'material' ? tgt.obj.id : null,
+        cash_item_id: tgt && tgt.kind === 'cash' ? tgt.obj.id : null,
+        qty_per_unit: calcRowBaseQty(r) / yield_
+      };
     });
     const { error: insErr } = await sb.from('product_recipe').insert(payload);
     if (insErr) throw insErr;
@@ -838,7 +853,7 @@ function renderCalc() {
   const current = sel.value;
   sel.innerHTML = '<option value="">— 不关联,只是快速算算 —</option>' + opts;
   sel.value = current;
-  if (!calcRows.length) calcRows.push({ rowId: ++calcRowSeq, material_id: materials[0] ? materials[0].id : '', qty: 0, unit: 'g' });
+  if (!calcRows.length) calcRows.push({ rowId: ++calcRowSeq, target: materials[0] ? 'm:' + materials[0].id : '', qty: 0, unit: 'g' });
   renderCalcRows();
   updateCalcProductButtons();
 }

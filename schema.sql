@@ -36,12 +36,17 @@ create table if not exists products (
 alter table products add column if not exists item_code text;
 
 -- 产品的标准原材料消耗比例 (可选,用于分摊单位产品成本)
+-- 配方的一行可以是原材料,也可以是现金采购品项(两个字段只会有一个有值),
+-- 跟消耗记录一样,因为配方里也可能用到巴刹买的香料之类
 create table if not exists product_recipe (
   id uuid primary key default gen_random_uuid(),
   product_id uuid not null references products(id) on delete cascade,
-  material_id uuid not null references materials(id) on delete cascade,
+  material_id uuid references materials(id) on delete cascade,
+  cash_item_id uuid references cash_items(id) on delete set null,
   qty_per_unit numeric not null default 0
 );
+alter table product_recipe add column if not exists cash_item_id uuid references cash_items(id) on delete set null;
+alter table product_recipe alter column material_id drop not null;
 
 -- 原材料采购入库 (让库存不会一直减到负数)
 create table if not exists material_purchases (
