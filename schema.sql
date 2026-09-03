@@ -57,15 +57,30 @@ create table if not exists material_purchases (
 );
 alter table material_purchases add column if not exists qty_base numeric;
 
--- 现金采购(自己/员工掏现金买的,不走供应商发票,单独记一笔方便报销/对账;
--- 品名是自由填写的,不强制对应原材料库里的品项,因为很多是巴刹/杂货店零星采购)
+-- 现金采购品项(独立于原材料库的一份小名单,巴刹/杂货店零买的东西,
+-- 跟正式供应商的原材料是分开管理的,互不混淆)
+create table if not exists cash_items (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  unit text not null,
+  last_price numeric not null default 0,  -- 最近一次买的价钱,选品项时自动带出来,当场可改
+  archived boolean not null default false,
+  created_at timestamptz not null default now()
+);
+alter table cash_items add column if not exists last_price numeric not null default 0;
+alter table cash_items enable row level security;
+drop policy if exists "allow all" on cash_items;
+create policy "allow all" on cash_items for all using (true) with check (true);
+
+-- 现金采购记录(自己/员工掏现金买的,不走供应商发票;操作方式跟"原材料入库"一样
+-- 选品项、填数量,但品项来自上面的 cash_items 名单,不会碰原材料库存 —— 这是一笔
+-- 独立的报销/支出记录,不是库存记录)
 create table if not exists cash_purchases (
   id uuid primary key default gen_random_uuid(),
-  supplier text,            -- 从哪里买的,选填(可能没有正式店名)
-  item_name text not null,  -- 品名(自由填写)
+  cash_item_id uuid references cash_items(id) on delete set null,
   qty numeric not null,
-  unit text not null,
-  unit_price numeric not null default 0,
+  unit_price numeric not null default 0, -- 员工付的现金单价
+  supplier text,            -- 从哪里买的,选填(可能没有正式店名)
   note text,
   photo_url text,           -- 收据照片
   created_at timestamptz not null default now()

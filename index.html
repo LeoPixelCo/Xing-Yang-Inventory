@@ -87,7 +87,14 @@
       </div>
       <div>
         <label class="text-sm text-gray-500"><span data-i18n="lblQty">数量</span> <span id="consumeQtyUnit" class="text-teal-700 font-medium"></span></label>
-        <input name="qty" type="number" step="any" min="0" required class="w-full mt-1 border rounded-lg px-3 py-2" placeholder="0" />
+        <div class="flex gap-2 mt-1">
+          <input name="qty" type="number" step="any" min="0" required class="flex-1 min-w-0 border rounded-lg px-3 py-2" placeholder="0" />
+          <select name="qty_unit" id="consumeQtyUnitSelect" class="hidden border rounded-lg px-2 py-2 w-20">
+            <option value="g">g</option>
+            <option value="kg">kg</option>
+          </select>
+        </div>
+        <p id="consumeConvertHint" class="text-xs text-gray-400 mt-1"></p>
       </div>
       <div>
         <label class="text-sm text-gray-500" data-i18n="lblPhoto">照片</label>
@@ -172,29 +179,27 @@
       <button type="submit" class="w-full bg-teal-700 text-white rounded-lg py-2.5 font-medium" data-i18n="btnSubmitPurchase">提交入库记录</button>
     </form>
 
-    <!-- 现金采购(不走供应商发票,自己/员工掏现金买的) -->
+    <!-- 现金采购(不走供应商发票,自己/员工掏现金买的;跟"原材料入库"一样选品项、填数量、算库存) -->
     <form id="form-cashbuy" class="record-form hidden space-y-3 bg-white rounded-xl p-4 shadow-sm">
+      <div>
+        <label class="text-sm text-gray-500" data-i18n="lblCashItem">品项</label>
+        <select name="cash_item_id" required class="w-full mt-1 border rounded-lg px-3 py-2"></select>
+      </div>
+      <div id="cashbuyNewItemFields" class="hidden grid grid-cols-2 gap-2">
+        <input name="new_item_name" type="text" class="border rounded-lg px-3 py-2 col-span-2" data-i18n-ph="phNewItemName" placeholder="新品项名称" />
+        <input name="new_item_unit" type="text" class="border rounded-lg px-3 py-2 col-span-2" data-i18n-ph="phNewItemUnit" placeholder="单位(如 PKT / KG / BTL)" />
+      </div>
+      <div>
+        <label class="text-sm text-gray-500"><span data-i18n="lblQty">数量</span> <span id="cashbuyQtyUnit" class="text-teal-700 font-medium"></span></label>
+        <input name="qty" type="number" step="any" min="0" required class="w-full mt-1 border rounded-lg px-3 py-2" placeholder="0" />
+      </div>
+      <div>
+        <label class="text-sm text-gray-500"><span data-i18n="lblUnitPrice">单价 (RM)</span><span id="cashbuyPriceUnit"></span></label>
+        <input name="unit_price" type="number" step="any" min="0" required class="w-full mt-1 border rounded-lg px-3 py-2" placeholder="0" />
+      </div>
       <div>
         <label class="text-sm text-gray-500" data-i18n="lblSupplier">从哪里买的</label>
         <input name="supplier" type="text" class="w-full mt-1 border rounded-lg px-3 py-2" data-i18n-ph="phOptional" placeholder="选填" />
-      </div>
-      <div>
-        <label class="text-sm text-gray-500" data-i18n="lblItemName">品名</label>
-        <input name="item_name" type="text" required class="w-full mt-1 border rounded-lg px-3 py-2" />
-      </div>
-      <div class="grid grid-cols-2 gap-2">
-        <div>
-          <label class="text-sm text-gray-500" data-i18n="lblQty">数量</label>
-          <input name="qty" type="number" step="any" min="0" required class="w-full mt-1 border rounded-lg px-3 py-2" placeholder="0" />
-        </div>
-        <div>
-          <label class="text-sm text-gray-500" data-i18n="lblUnit">单位</label>
-          <input name="unit" type="text" required class="w-full mt-1 border rounded-lg px-3 py-2" placeholder="KG / PKT / ..." />
-        </div>
-      </div>
-      <div>
-        <label class="text-sm text-gray-500" data-i18n="lblUnitPrice">单价 (RM)</label>
-        <input name="unit_price" type="number" step="any" min="0" required class="w-full mt-1 border rounded-lg px-3 py-2" placeholder="0" />
       </div>
       <div>
         <label class="text-sm text-gray-500" data-i18n="lblPhoto">照片</label>
@@ -340,6 +345,7 @@
     <div class="flex gap-2 mb-3">
       <button data-settings="materials" class="settings-tab-btn active px-3 py-1.5 rounded-full border border-teal-700 text-teal-700 text-sm">原材料库</button>
       <button data-settings="products" class="settings-tab-btn px-3 py-1.5 rounded-full border border-teal-700 text-teal-700 text-sm">产品库</button>
+      <button data-settings="cashitems" class="settings-tab-btn px-3 py-1.5 rounded-full border border-teal-700 text-teal-700 text-sm whitespace-nowrap">现金采购品项</button>
     </div>
 
     <div id="settings-materials" class="settings-panel">
@@ -394,6 +400,30 @@
         </table>
       </div>
     </div>
+
+    <div id="settings-cashitems" class="settings-panel hidden">
+      <form id="cashItemForm" class="bg-white rounded-xl p-4 shadow-sm space-y-2 mb-4">
+        <input type="hidden" name="id" />
+        <div class="grid grid-cols-2 gap-2">
+          <input name="name" placeholder="品项名称" required class="border rounded-lg px-3 py-2 col-span-2" />
+          <input name="unit" placeholder="单位(如 PKT/KG/BTL)" required class="border rounded-lg px-3 py-2" />
+          <input name="last_price" type="number" step="any" placeholder="最近价格 (RM)" class="border rounded-lg px-3 py-2" />
+        </div>
+        <p class="text-xs text-gray-400">这份清单是给「记录 → 现金采购」用的,跟原材料库分开,不会影响原材料库存。价格会在每次记现金采购时自动更新成最新那次的价钱。</p>
+        <div class="flex gap-2">
+          <button type="submit" class="flex-1 bg-teal-700 text-white rounded-lg py-2 text-sm">保存品项</button>
+          <button type="button" id="cashItemCancelEdit" class="hidden px-4 border rounded-lg text-sm">取消编辑</button>
+        </div>
+      </form>
+      <div class="overflow-x-auto bg-white rounded-xl shadow-sm">
+        <table class="text-sm" id="cashItemTable">
+          <thead class="bg-gray-100 text-gray-500">
+            <tr><th class="text-left px-3 py-2 whitespace-nowrap">品项名称</th><th class="px-3 py-2 whitespace-nowrap">单位</th><th class="px-3 py-2 whitespace-nowrap">最近价格</th><th class="px-3 py-2 whitespace-nowrap"></th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
   </section>
 
 </main>
@@ -419,7 +449,7 @@
 
 <div id="printArea"></div>
 
-<script src="config.js?v=1788433592"></script>
-<script src="app.js?v=1788433592"></script>
+<script src="config.js?v=1788434415"></script>
+<script src="app.js?v=1788434415"></script>
 </body>
 </html>

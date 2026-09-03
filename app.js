@@ -7,6 +7,7 @@ const CFG = window.LEDGER_CONFIG || {};
 let sb = null;
 let materials = [];
 let products = [];
+let cashItems = []; // 现金采购品项清单(独立于原材料库)
 let charts = {}; // 保存 Chart.js 实例,重绘前先销毁
 let lastDaily = null; // 最近一次日报数据,供导出 PDF/CSV 使用
 
@@ -45,8 +46,12 @@ const I18N = {
   lblPhoto: { zh: '照片', my: 'ဓာတ်ပုံ', id: 'Foto' },
   lblNote: { zh: '备注', my: 'မှတ်ချက်', id: 'Catatan' },
   lblSupplier: { zh: '从哪里买的', my: 'ဘယ်ကနေဝယ်တာလဲ', id: 'Beli dari mana' },
+  lblCashItem: { zh: '品项', my: 'ပစ္စည်း', id: 'Barang' },
   lblItemName: { zh: '品名', my: 'ပစ္စည်းအမည်', id: 'Nama Barang' },
   lblUnit: { zh: '单位', my: 'ယူနစ်', id: 'Satuan' },
+  phNewItemName: { zh: '新品项名称', my: 'ပစ္စည်းအမည် အသစ်', id: 'Nama barang baru' },
+  phNewItemUnit: { zh: '单位(如 PKT / KG / BTL)', my: 'ယူနစ် (PKT / KG / BTL)', id: 'Satuan (PKT / KG / BTL)' },
+  optNewCashItem: { zh: '+ 新品项(不在列表里)', my: '+ ပစ္စည်းအသစ် (စာရင်းမှာမပါ)', id: '+ Barang baru (belum ada di daftar)' },
   lblUnitPrice: { zh: '单价 (RM)', my: 'ဈေးနှုန်း (RM)', id: 'Harga Satuan (RM)' },
   cashBuyReceiptHint: { zh: '建议拍收据,方便报销对账', my: 'ငွေတောင်းလက်မှတ်ဓာတ်ပုံ ရိုက်ထားရင် ပိုကောင်းပါတယ်', id: 'Sebaiknya foto struk untuk klaim' },
   phOptional: { zh: '选填', my: 'မဖြည့်လည်းရ', id: 'opsional' },
@@ -242,6 +247,17 @@ async function loadMaterials() {
   updatePurchaseQtyUnit();
 }
 
+async function loadCashItems() {
+  const { data, error } = await sb.from('cash_items').select('*').eq('archived', false).order('name');
+  if (error) { toast('读取现金采购品项失败: ' + error.message, true); return; }
+  cashItems = data || [];
+  const opts = cashItems.map(i => `<option value="${i.id}">${i.name}(${i.unit})</option>`).join('');
+  $all('select[name="cash_item_id"]').forEach(sel => {
+    sel.innerHTML = opts + `<option value="__new__">${t('optNewCashItem')}</option>`;
+  });
+  updateCashbuyItemHint();
+}
+
 async function loadProducts() {
   const { data, error } = await sb.from('products').select('*').eq('archived', false).order('name');
   if (error) { toast('读取产品库失败: ' + error.message, true); return; }
@@ -252,6 +268,28 @@ async function loadProducts() {
 
 function materialName(id) { const m = materials.find(x => x.id === id); return m ? m.name : '(已删除的原材料)'; }
 function productName(id) { const p = products.find(x => x.id === id); return p ? p.name : '(已删除的产品)'; }
+function cashItemName(id) { const i = cashItems.find(x => x.id === id); return i ? i.name : '(已删除的品项)'; }
+function cashItemUnit(id) { const i = cashItems.find(x => x.id === id); return i ? i.unit : ''; }
+
+// 选了品项之后:显示单位、把上次的价钱自动填进单价栏(可以改);
+// 选"+ 新品项"则展开手动输入品名/单位的两个格子。
+function updateCashbuyItemHint() {
+  const sel = $('#form-cashbuy select[name="cash_item_id"]');
+  if (!sel) return;
+  const isNew = sel.value === '__new__';
+  $('#cashbuyNewItemFields').classList.toggle('hidden', !isNew);
+  const item = cashItems.find(i => i.id === sel.value);
+  $('#cashbuyQtyUnit').textContent = item ? `(${item.unit})` : '';
+  $('#cashbuyPriceUnit').textContent = item ? ` (每 ${item.unit})` : '';
+  const priceInput = $('#form-cashbuy input[name="unit_price"]');
+  if (item && !priceInput.dataset.touched) priceInput.value = item.last_price || '';
+}
+
+$('#form-cashbuy select[name="cash_item_id"]')?.addEventListener('change', () => {
+  $('#form-cashbuy input[name="unit_price"]').dataset.touched = ''; // 换品项就重新带出该品项的价钱
+  updateCashbuyItemHint();
+});
+$('#form-cashbuy input[name="unit_price"]')?.addEventListener('input', e => { e.target.dataset.touched = '1'; });
 
 // -------------------- 克重换算:表单单位提示 --------------------
 function selectedMaterial(selectEl) { return materials.find(m => m.id === selectEl.value); }
@@ -259,10 +297,30 @@ function selectedMaterial(selectEl) { return materials.find(m => m.id === select
 function updateConsumeQtyUnit() {
   const sel = $('#form-consume select[name="material_id"]');
   const hint = $('#consumeQtyUnit');
+  const unitSelect = $('#consumeQtyUnitSelect');
   if (!sel || !hint) return;
   const m = selectedMaterial(sel);
-  hint.textContent = m ? `(${stockUnitLabel(m)})` : '';
+  // 克重类原材料给一个 g/kg 下拉自己选,其他原材料就直接显示它的采购单位
+  const gramTracked = isGramTracked(m);
+  unitSelect.classList.toggle('hidden', !gramTracked);
+  hint.textContent = m && !gramTracked ? `(${m.unit})` : '';
+  updateConsumeConvertHint();
 }
+
+// 用 kg 填的时候,底下提示换算成多少克(存进数据库的一律是克)
+function updateConsumeConvertHint() {
+  const sel = $('#form-consume select[name="material_id"]');
+  const qtyInput = $('#form-consume input[name="qty"]');
+  const unitSelect = $('#consumeQtyUnitSelect');
+  const hint = $('#consumeConvertHint');
+  if (!sel || !qtyInput || !hint) return;
+  const m = selectedMaterial(sel);
+  const qty = Number(qtyInput.value);
+  hint.textContent = (isGramTracked(m) && unitSelect.value === 'kg' && qty > 0) ? `= ${Math.round(qty * 1000)} g` : '';
+}
+
+$('#consumeQtyUnitSelect')?.addEventListener('change', updateConsumeConvertHint);
+$('#form-consume input[name="qty"]')?.addEventListener('input', updateConsumeConvertHint);
 
 function updatePurchaseQtyUnit() {
   const sel = $('#form-purchase select[name="material_id"]');
@@ -372,9 +430,12 @@ async function handleRecordSubmit(e, table, buildRow) {
 
 $('#form-consume').addEventListener('submit', e => handleRecordSubmit(e, 'material_consumptions', (fd, photo) => {
   const mat = materials.find(m => m.id === fd.get('material_id'));
+  // 克重类原材料可以选 g 或 kg 填,存进去的一律换算成克
+  const entered = Number(fd.get('qty'));
+  const qty = (mat && isGramTracked(mat) && fd.get('qty_unit') === 'kg') ? entered * 1000 : entered;
   return {
     material_id: fd.get('material_id') || null,
-    qty: Number(fd.get('qty')),
+    qty,
     unit_price_snapshot: mat ? pricePerBaseUnit(mat) : 0,
     note: fd.get('note') || null,
     photo_url: photo
@@ -410,15 +471,59 @@ $('#form-purchase').addEventListener('submit', e => handleRecordSubmit(e, 'mater
   };
 }));
 
-$('#form-cashbuy').addEventListener('submit', e => handleRecordSubmit(e, 'cash_purchases', (fd, photo) => ({
-  supplier: fd.get('supplier') || null,
-  item_name: fd.get('item_name'),
-  qty: Number(fd.get('qty')),
-  unit: fd.get('unit'),
-  unit_price: Number(fd.get('unit_price')) || 0,
-  note: fd.get('note') || null,
-  photo_url: photo
-})));
+// 现金采购提交:选的是"+ 新品项"就先把品项写进 cash_items 再记这笔账;
+// 记完顺手把该品项的 last_price 更新成这次的价钱,下次选它就自动带出最新价。
+$('#form-cashbuy').addEventListener('submit', async e => {
+  e.preventDefault();
+  const form = e.target;
+  const btn = form.querySelector('button[type="submit"]');
+  const fd = new FormData(form);
+  const price = Number(fd.get('unit_price')) || 0;
+  let itemId = fd.get('cash_item_id');
+
+  btn.disabled = true;
+  const originalText = btn.textContent;
+  btn.textContent = t('toastSubmitting');
+  try {
+    if (itemId === '__new__') {
+      const name = (fd.get('new_item_name') || '').trim();
+      const unit = (fd.get('new_item_unit') || '').trim();
+      if (!name || !unit) { toast('新品项要填名称和单位', true); return; }
+      const { data, error } = await sb.from('cash_items').insert({ name, unit, last_price: price }).select('id').single();
+      if (error) throw error;
+      itemId = data.id;
+    }
+
+    let photoUrl = null;
+    const file = fd.get('photo');
+    if (file && file.size > 0) {
+      btn.textContent = t('toastUploadingPhoto');
+      photoUrl = await uploadPhoto(file);
+    }
+
+    const { error: insErr } = await sb.from('cash_purchases').insert({
+      cash_item_id: itemId,
+      qty: Number(fd.get('qty')),
+      unit_price: price,
+      supplier: fd.get('supplier') || null,
+      note: fd.get('note') || null,
+      photo_url: photoUrl
+    });
+    if (insErr) throw insErr;
+
+    await sb.from('cash_items').update({ last_price: price }).eq('id', itemId);
+
+    toast(t('toastSubmitted'));
+    form.reset();
+    await loadCashItems();
+    renderRecent();
+  } catch (err) {
+    toast('提交失败: ' + err.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
+});
 
 // -------------------- 最近记录 --------------------
 async function renderRecent() {
@@ -436,7 +541,7 @@ async function renderRecent() {
     ...(p.data || []).map(r => ({ ...r, kind: t('subProduce'), label: productName(r.product_id), qtyLabel: num(r.qty), table: 'production_records' })),
     ...(s.data || []).map(r => ({ ...r, kind: t('subShip'), label: productName(r.product_id), qtyLabel: num(r.qty), table: 'shipment_records' })),
     ...(pu.data || []).map(r => { const m = materials.find(x => x.id === r.material_id); return { ...r, kind: t('subPurchase'), label: materialName(r.material_id), qtyLabel: num(r.qty) + (m ? ' ' + m.unit : ''), table: 'material_purchases' }; }),
-    ...(cb.data || []).map(r => ({ ...r, kind: t('subCashBuy'), label: r.item_name, qtyLabel: money(r.qty * r.unit_price), table: 'cash_purchases' }))
+    ...(cb.data || []).map(r => ({ ...r, kind: t('subCashBuy'), label: cashItemName(r.cash_item_id), qtyLabel: money(r.qty * r.unit_price), table: 'cash_purchases' }))
   ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 10);
 
   if (!items.length) { box.innerHTML = `<p class="text-sm text-gray-400">${t('recentEmpty')}</p>`; return; }
@@ -720,7 +825,7 @@ async function renderDaily() {
     ${section('生产记录', p.data || [], r => `<div class="flex justify-between items-center border-b pb-1"><span>${productName(r.product_id)}${r.note ? ' · ' + r.note : ''}</span><span>${num(r.qty)}${delBtn('production_records', r.id)}</span></div>`)}
     ${section('出货记录', s.data || [], r => `<div class="flex justify-between items-center border-b pb-1"><span>${productName(r.product_id)}${r.destination ? ' → ' + r.destination : ''}</span><span>${num(r.qty)}${delBtn('shipment_records', r.id)}</span></div>`)}
     ${section('原材料入库', pu.data || [], r => { const m = materials.find(x => x.id === r.material_id); return `<div class="flex justify-between items-center border-b pb-1"><span>${materialName(r.material_id)}${r.note ? ' · ' + r.note : ''}</span><span>${num(r.qty)} ${m ? m.unit : ''}${delBtn('material_purchases', r.id)}</span></div>`; })}
-    ${section('现金采购', cb.data || [], r => `<div class="flex justify-between items-center border-b pb-1"><span>${r.item_name}${r.supplier ? ' · ' + r.supplier : ''}${r.note ? ' · ' + r.note : ''}</span><span>${money(r.qty * r.unit_price)}${delBtn('cash_purchases', r.id)}</span></div>`)}
+    ${section('现金采购', cb.data || [], r => `<div class="flex justify-between items-center border-b pb-1"><span>${cashItemName(r.cash_item_id)} × ${num(r.qty)} ${cashItemUnit(r.cash_item_id)}${r.supplier ? ' · ' + r.supplier : ''}${r.note ? ' · ' + r.note : ''}</span><span>${money(r.qty * r.unit_price)}${delBtn('cash_purchases', r.id)}</span></div>`)}
     <div class="bg-white rounded-xl p-4 shadow-sm">
       <h3 class="font-medium mb-2">当日结束库存快照 · 原材料</h3>
       <div class="text-sm space-y-1">
@@ -758,7 +863,7 @@ function buildDailyReportHTML(d) {
     const m = materials.find(x => x.id === r.material_id);
     return { name: materialName(r.material_id), qty: num(r.qty) + ' ' + (m ? m.unit : ''), price: money(r.unit_price), note: r.note || '' };
   });
-  const cashBuyRows = d.cb.map(r => ({ name: r.item_name, supplier: r.supplier || '', qty: num(r.qty) + ' ' + r.unit, price: money(r.unit_price), subtotal: money(r.qty * r.unit_price), note: r.note || '' }));
+  const cashBuyRows = d.cb.map(r => ({ name: cashItemName(r.cash_item_id), supplier: r.supplier || '', qty: num(r.qty) + ' ' + cashItemUnit(r.cash_item_id), price: money(r.unit_price), subtotal: money(r.qty * r.unit_price), note: r.note || '' }));
 
   const mStockRows = d.mStock.map(m => ({ name: m.name, qty: isGramTracked(m) ? formatWeight(m.stock) : num(m.stock) + ' ' + m.unit, low: m.stock <= m.reorder_threshold }));
   const pStockRows = d.pStock.map(p => ({ name: p.name, qty: num(p.stock) + ' ' + p.unit, low: p.stock <= p.reorder_threshold }));
@@ -843,7 +948,7 @@ function exportDailyCSV() {
   d.p.forEach(r => rows.push(['生产', productName(r.product_id), num(r.qty), '', r.note || '', fmtTime(r.created_at)]));
   d.s.forEach(r => rows.push(['出货', productName(r.product_id), num(r.qty), '', r.destination || '', fmtTime(r.created_at)]));
   d.pu.forEach(r => { const m = materials.find(x => x.id === r.material_id); rows.push(['原材料入库', materialName(r.material_id), num(r.qty) + ' ' + (m ? m.unit : ''), money(r.unit_price), r.note || '', fmtTime(r.created_at)]); });
-  d.cb.forEach(r => rows.push(['现金采购', r.item_name, num(r.qty) + ' ' + r.unit, money(r.unit_price), [r.supplier, r.note].filter(Boolean).join(' · '), fmtTime(r.created_at)]));
+  d.cb.forEach(r => rows.push(['现金采购', cashItemName(r.cash_item_id), num(r.qty) + ' ' + cashItemUnit(r.cash_item_id), money(r.unit_price), [r.supplier, r.note].filter(Boolean).join(' · '), fmtTime(r.created_at)]));
   rows.push([]);
   rows.push(['当日原材料成本', money(d.cost)]);
   rows.push(['当日现金采购总额', money(d.cashTotal)]);
@@ -1053,6 +1158,48 @@ $('#productForm').addEventListener('submit', async e => {
   await Promise.all([loadProducts(), renderProductTable()]);
 });
 
+// -------------------- 设置: 现金采购品项 --------------------
+async function renderCashItemTable() {
+  const { data } = await sb.from('cash_items').select('*').order('archived').order('name');
+  $('#cashItemTable tbody').innerHTML = (data || []).map(i => `
+    <tr class="border-t ${i.archived ? 'opacity-40' : ''}">
+      <td class="px-3 py-2">${i.name}</td>
+      <td class="px-3 py-2 text-center whitespace-nowrap">${i.unit}</td>
+      <td class="px-3 py-2 text-center whitespace-nowrap">${money(i.last_price)}</td>
+      <td class="px-3 py-2 text-right whitespace-nowrap">
+        <button class="text-teal-700 text-xs mr-2" onclick="editCashItem('${i.id}')">编辑</button>
+        <button class="text-gray-400 text-xs" onclick="toggleArchiveCashItem('${i.id}', ${!i.archived})">${i.archived ? '恢复' : '归档'}</button>
+      </td>
+    </tr>`).join('');
+}
+
+window.editCashItem = async function (id) {
+  const { data: i } = await sb.from('cash_items').select('*').eq('id', id).single();
+  if (!i) return;
+  const f = $('#cashItemForm');
+  f.id.value = i.id; f.name.value = i.name; f.unit.value = i.unit; f.last_price.value = i.last_price;
+  $('#cashItemCancelEdit').classList.remove('hidden');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+window.toggleArchiveCashItem = async function (id, archived) {
+  await sb.from('cash_items').update({ archived }).eq('id', id);
+  toast(archived ? '已归档' : '已恢复');
+  await Promise.all([loadCashItems(), renderCashItemTable()]);
+};
+$('#cashItemCancelEdit').addEventListener('click', () => { $('#cashItemForm').reset(); $('#cashItemForm').id.value = ''; $('#cashItemCancelEdit').classList.add('hidden'); });
+
+$('#cashItemForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const id = fd.get('id');
+  const row = { name: fd.get('name'), unit: fd.get('unit'), last_price: Number(fd.get('last_price')) || 0 };
+  const { error } = id ? await sb.from('cash_items').update(row).eq('id', id) : await sb.from('cash_items').insert(row);
+  if (error) { toast('保存失败: ' + error.message, true); return; }
+  toast('已保存');
+  e.target.reset(); e.target.id.value = ''; $('#cashItemCancelEdit').classList.add('hidden');
+  await Promise.all([loadCashItems(), renderCashItemTable()]);
+});
+
 // -------------------- 启动 --------------------
 (async function start() {
   const savedLang = safeStorage.get('ledger_lang');
@@ -1061,6 +1208,6 @@ $('#productForm').addEventListener('submit', async e => {
   initRoleGate();
   if (!initSupabase()) return;
   $('#dailyDate').value = todayStr();
-  await Promise.all([loadMaterials(), loadProducts()]);
-  await Promise.all([renderRecent(), renderMaterialTable(), renderProductTable()]);
+  await Promise.all([loadMaterials(), loadProducts(), loadCashItems()]);
+  await Promise.all([renderRecent(), renderMaterialTable(), renderProductTable(), renderCashItemTable()]);
 })();
