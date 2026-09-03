@@ -243,7 +243,7 @@ async function loadMaterials() {
   materials = data || [];
   const opts = materials.map(m => `<option value="${m.id}">${m.item_code ? m.item_code + ' ' : ''}${m.name}(${m.unit})</option>`).join('');
   $all('select[name="material_id"]').forEach(sel => { sel.innerHTML = opts || `<option value="">${t('selectNoMaterial')}</option>`; });
-  updateConsumeQtyUnit();
+  loadConsumeOptions();
   updatePurchaseQtyUnit();
 }
 
@@ -256,6 +256,7 @@ async function loadCashItems() {
     sel.innerHTML = opts + `<option value="__new__">${t('optNewCashItem')}</option>`;
   });
   updateCashbuyItemHint();
+  loadConsumeOptions(); // 现金采购品项也要出现在"原材料消耗"的下拉里
 }
 
 async function loadProducts() {
@@ -270,6 +271,16 @@ function materialName(id) { const m = materials.find(x => x.id === id); return m
 function productName(id) { const p = products.find(x => x.id === id); return p ? p.name : '(已删除的产品)'; }
 function cashItemName(id) { const i = cashItems.find(x => x.id === id); return i ? i.name : '(已删除的品项)'; }
 function cashItemUnit(id) { const i = cashItems.find(x => x.id === id); return i ? i.unit : ''; }
+
+// 一条消耗记录可能是原材料,也可能是现金采购品项 —— 统一取名字和数量文字
+function consumptionName(r) {
+  return r.cash_item_id ? cashItemName(r.cash_item_id) : materialName(r.material_id);
+}
+function consumptionQtyLabel(r) {
+  if (r.cash_item_id) return num(r.qty) + ' ' + cashItemUnit(r.cash_item_id);
+  const m = materials.find(x => x.id === r.material_id);
+  return isGramTracked(m) ? formatWeight(r.qty) : num(r.qty) + (m ? ' ' + m.unit : '');
+}
 
 // 选了品项之后:显示单位、把上次的价钱自动填进单价栏(可以改);
 // 选"+ 新品项"则展开手动输入品名/单位的两个格子。
@@ -291,36 +302,66 @@ $('#form-cashbuy select[name="cash_item_id"]')?.addEventListener('change', () =>
 });
 $('#form-cashbuy input[name="unit_price"]')?.addEventListener('input', e => { e.target.dataset.touched = '1'; });
 
+// -------------------- 消耗表单:原材料 + 现金采购品项 两个来源 --------------------
+// 下拉的 value 用前缀区分:m:<id> = 原材料库,c:<id> = 现金采购品项。
+// 现金采购的品项不进"原材料入库"(那张表单只认原材料库),但用掉了要能记消耗、算成本。
+function loadConsumeOptions() {
+  const sel = $('#form-consume select[name="consume_target"]');
+  if (!sel) return;
+  const prev = sel.value;
+  const matOpts = materials.map(m => `<option value="m:${m.id}">${m.item_code ? m.item_code + ' ' : ''}${m.name}(${m.unit})</option>`).join('');
+  const cashOpts = cashItems.map(i => `<option value="c:${i.id}">${i.name}(${i.unit})</option>`).join('');
+  sel.innerHTML =
+    (matOpts ? `<optgroup label="${t('lblMaterial')}">${matOpts}</optgroup>` : '') +
+    (cashOpts ? `<optgroup label="${t('subCashBuy')}">${cashOpts}</optgroup>` : '') ||
+    `<option value="">${t('selectNoMaterial')}</option>`;
+  if (prev && sel.querySelector(`option[value="${prev}"]`)) sel.value = prev;
+  updateConsumeQtyUnit();
+}
+
+// 解析消耗下拉选中的东西,统一返回:是哪种、对象、计量单位、每单位成本、是否按克
+function consumeTarget() {
+  const sel = $('#form-consume select[name="consume_target"]');
+  const v = sel ? sel.value : '';
+  if (v.startsWith('m:')) {
+    const m = materials.find(x => x.id === v.slice(2));
+    if (m) return { kind: 'material', obj: m, gram: isGramTracked(m), unit: stockUnitLabel(m), price: pricePerBaseUnit(m) };
+  }
+  if (v.startsWith('c:')) {
+    const i = cashItems.find(x => x.id === v.slice(2));
+    if (i) return { kind: 'cash', obj: i, gram: false, unit: i.unit, price: Number(i.last_price) || 0 };
+  }
+  return null;
+}
+
 // -------------------- 克重换算:表单单位提示 --------------------
 function selectedMaterial(selectEl) { return materials.find(m => m.id === selectEl.value); }
 
 function updateConsumeQtyUnit() {
-  const sel = $('#form-consume select[name="material_id"]');
   const hint = $('#consumeQtyUnit');
   const unitSelect = $('#consumeQtyUnitSelect');
-  if (!sel || !hint) return;
-  const m = selectedMaterial(sel);
-  // 克重类原材料给一个 g/kg 下拉自己选,其他原材料就直接显示它的采购单位
-  const gramTracked = isGramTracked(m);
-  unitSelect.classList.toggle('hidden', !gramTracked);
-  hint.textContent = m && !gramTracked ? `(${m.unit})` : '';
+  if (!hint || !unitSelect) return;
+  const tgt = consumeTarget();
+  // 克重类原材料给一个 g/kg 下拉自己选,其他的直接显示它自己的单位
+  unitSelect.classList.toggle('hidden', !(tgt && tgt.gram));
+  hint.textContent = (tgt && !tgt.gram) ? `(${tgt.unit})` : '';
   updateConsumeConvertHint();
 }
 
 // 用 kg 填的时候,底下提示换算成多少克(存进数据库的一律是克)
 function updateConsumeConvertHint() {
-  const sel = $('#form-consume select[name="material_id"]');
   const qtyInput = $('#form-consume input[name="qty"]');
   const unitSelect = $('#consumeQtyUnitSelect');
   const hint = $('#consumeConvertHint');
-  if (!sel || !qtyInput || !hint) return;
-  const m = selectedMaterial(sel);
+  if (!qtyInput || !hint) return;
+  const tgt = consumeTarget();
   const qty = Number(qtyInput.value);
-  hint.textContent = (isGramTracked(m) && unitSelect.value === 'kg' && qty > 0) ? `= ${Math.round(qty * 1000)} g` : '';
+  hint.textContent = (tgt && tgt.gram && unitSelect.value === 'kg' && qty > 0) ? `= ${Math.round(qty * 1000)} g` : '';
 }
 
 $('#consumeQtyUnitSelect')?.addEventListener('change', updateConsumeConvertHint);
 $('#form-consume input[name="qty"]')?.addEventListener('input', updateConsumeConvertHint);
+$('#form-consume select[name="consume_target"]')?.addEventListener('change', updateConsumeQtyUnit);
 
 function updatePurchaseQtyUnit() {
   const sel = $('#form-purchase select[name="material_id"]');
@@ -429,14 +470,15 @@ async function handleRecordSubmit(e, table, buildRow) {
 }
 
 $('#form-consume').addEventListener('submit', e => handleRecordSubmit(e, 'material_consumptions', (fd, photo) => {
-  const mat = materials.find(m => m.id === fd.get('material_id'));
+  const tgt = consumeTarget();
   // 克重类原材料可以选 g 或 kg 填,存进去的一律换算成克
   const entered = Number(fd.get('qty'));
-  const qty = (mat && isGramTracked(mat) && fd.get('qty_unit') === 'kg') ? entered * 1000 : entered;
+  const qty = (tgt && tgt.gram && fd.get('qty_unit') === 'kg') ? entered * 1000 : entered;
   return {
-    material_id: fd.get('material_id') || null,
+    material_id: tgt && tgt.kind === 'material' ? tgt.obj.id : null,
+    cash_item_id: tgt && tgt.kind === 'cash' ? tgt.obj.id : null,
     qty,
-    unit_price_snapshot: mat ? pricePerBaseUnit(mat) : 0,
+    unit_price_snapshot: tgt ? tgt.price : 0,
     note: fd.get('note') || null,
     photo_url: photo
   };
@@ -537,7 +579,7 @@ async function renderRecent() {
     sb.from('cash_purchases').select('*').order('created_at', { ascending: false }).limit(5)
   ]);
   const items = [
-    ...(c.data || []).map(r => { const m = materials.find(x => x.id === r.material_id); return { ...r, kind: t('subConsume'), label: materialName(r.material_id), qtyLabel: isGramTracked(m) ? formatWeight(r.qty) : num(r.qty), table: 'material_consumptions' }; }),
+    ...(c.data || []).map(r => ({ ...r, kind: t('subConsume'), label: consumptionName(r), qtyLabel: consumptionQtyLabel(r), table: 'material_consumptions' })),
     ...(p.data || []).map(r => ({ ...r, kind: t('subProduce'), label: productName(r.product_id), qtyLabel: num(r.qty), table: 'production_records' })),
     ...(s.data || []).map(r => ({ ...r, kind: t('subShip'), label: productName(r.product_id), qtyLabel: num(r.qty), table: 'shipment_records' })),
     ...(pu.data || []).map(r => { const m = materials.find(x => x.id === r.material_id); return { ...r, kind: t('subPurchase'), label: materialName(r.material_id), qtyLabel: num(r.qty) + (m ? ' ' + m.unit : ''), table: 'material_purchases' }; }),
@@ -644,16 +686,28 @@ function calcMaterialOptions(selectedId) {
     || '<option value="">(请先在设置中添加原材料)</option>';
 }
 
+// 一行填的数量换算成"计价单位"的数量:克重类原材料选了 kg 就乘 1000
+function calcRowBaseQty(row, m) {
+  const qty = Number(row.qty) || 0;
+  return (m && isGramTracked(m) && row.unit === 'kg') ? qty * 1000 : qty;
+}
+
 function renderCalcRows() {
   $('#calcRows').innerHTML = calcRows.map(row => {
     const m = materials.find(x => x.id === row.material_id);
-    const unitLabel = m ? stockUnitLabel(m) : '';
-    const subtotal = m ? row.qty * pricePerBaseUnit(m) : 0;
+    const gram = isGramTracked(m);
+    const subtotal = m ? calcRowBaseQty(row, m) * pricePerBaseUnit(m) : 0;
+    const unitCell = gram
+      ? `<select class="calc-unit-select border rounded-lg px-1 py-1.5 text-xs w-14 shrink-0">
+           <option value="g" ${row.unit !== 'kg' ? 'selected' : ''}>g</option>
+           <option value="kg" ${row.unit === 'kg' ? 'selected' : ''}>kg</option>
+         </select>`
+      : `<span class="calc-unit text-xs text-gray-400 w-14 shrink-0 text-center">${m ? m.unit : ''}</span>`;
     return `
     <div class="calc-row bg-white rounded-xl p-3 shadow-sm flex items-center gap-2" data-row="${row.rowId}">
       <select class="calc-material flex-1 min-w-0 border rounded-lg px-2 py-1.5 text-sm">${calcMaterialOptions(row.material_id)}</select>
       <input type="number" step="any" min="0" value="${row.qty || ''}" placeholder="0" class="calc-qty w-16 border rounded-lg px-2 py-1.5 text-sm text-right" />
-      <span class="calc-unit text-xs text-gray-400 w-8 shrink-0">${unitLabel}</span>
+      ${unitCell}
       <span class="calc-subtotal text-sm font-medium text-teal-700 w-20 shrink-0 text-right">${money(subtotal)}</span>
       <button type="button" class="calc-remove text-red-600 text-xs shrink-0">✕</button>
     </div>`;
@@ -668,7 +722,7 @@ function updateCalcTotals() {
     const row = calcRows.find(r => String(r.rowId) === rowId);
     if (!row) return;
     const m = materials.find(x => x.id === row.material_id);
-    const subtotal = m ? row.qty * pricePerBaseUnit(m) : 0;
+    const subtotal = m ? calcRowBaseQty(row, m) * pricePerBaseUnit(m) : 0;
     rowEl.querySelector('.calc-subtotal').textContent = money(subtotal);
     total += subtotal;
   });
@@ -691,8 +745,11 @@ $('#calcRows').addEventListener('change', e => {
   if (!row) return;
   if (e.target.classList.contains('calc-material')) {
     row.material_id = e.target.value;
-    const m = materials.find(x => x.id === row.material_id);
-    rowEl.querySelector('.calc-unit').textContent = m ? stockUnitLabel(m) : '';
+    row.unit = 'g'; // 换了原材料就重置单位选择
+    renderCalcRows();  // 重画这行(可能要从"固定单位"变成 g/kg 下拉,或反过来)
+  }
+  if (e.target.classList.contains('calc-unit-select')) {
+    row.unit = e.target.value;
     updateCalcTotals();
   }
 });
@@ -704,7 +761,7 @@ $('#calcRows').addEventListener('click', e => {
 });
 
 $('#calcAddRowBtn').addEventListener('click', () => {
-  calcRows.push({ rowId: ++calcRowSeq, material_id: materials[0] ? materials[0].id : '', qty: 0 });
+  calcRows.push({ rowId: ++calcRowSeq, material_id: materials[0] ? materials[0].id : '', qty: 0, unit: 'g' });
   renderCalcRows();
 });
 $('#calcYield').addEventListener('input', updateCalcTotals);
@@ -739,7 +796,8 @@ $('#calcLoadBtn').addEventListener('click', async () => {
   if (!productId) return;
   const { data, error } = await sb.from('product_recipe').select('*').eq('product_id', productId);
   if (error) { toast('读取配方失败: ' + error.message, true); return; }
-  calcRows = (data || []).map(r => ({ rowId: ++calcRowSeq, material_id: r.material_id, qty: Number(r.qty_per_unit) || 0 }));
+  // 配方里存的是"每份用量",克重类的存的是克数,载入时就用 g 显示
+  calcRows = (data || []).map(r => ({ rowId: ++calcRowSeq, material_id: r.material_id, qty: Number(r.qty_per_unit) || 0, unit: 'g' }));
   $('#calcYield').value = 1;
   renderCalcRows();
   toast('已载入配方');
@@ -758,7 +816,11 @@ $('#calcSaveBtn').addEventListener('click', async () => {
   try {
     const { error: delErr } = await sb.from('product_recipe').delete().eq('product_id', productId);
     if (delErr) throw delErr;
-    const payload = rows.map(r => ({ product_id: productId, material_id: r.material_id, qty_per_unit: r.qty / yield_ }));
+    // 存的是换算后的用量(克重类=克),跟消耗记录的计量方式一致
+    const payload = rows.map(r => {
+      const m = materials.find(x => x.id === r.material_id);
+      return { product_id: productId, material_id: r.material_id, qty_per_unit: calcRowBaseQty(r, m) / yield_ };
+    });
     const { error: insErr } = await sb.from('product_recipe').insert(payload);
     if (insErr) throw insErr;
     toast('已保存标准配方');
@@ -776,7 +838,7 @@ function renderCalc() {
   const current = sel.value;
   sel.innerHTML = '<option value="">— 不关联,只是快速算算 —</option>' + opts;
   sel.value = current;
-  if (!calcRows.length) calcRows.push({ rowId: ++calcRowSeq, material_id: materials[0] ? materials[0].id : '', qty: 0 });
+  if (!calcRows.length) calcRows.push({ rowId: ++calcRowSeq, material_id: materials[0] ? materials[0].id : '', qty: 0, unit: 'g' });
   renderCalcRows();
   updateCalcProductButtons();
 }
@@ -821,7 +883,7 @@ async function renderDaily() {
         <div class="text-lg font-semibold text-teal-700">${money(cashTotal)}</div>
       </div>
     </div>
-    ${section('原材料消耗', c.data || [], r => { const m = materials.find(x => x.id === r.material_id); return `<div class="flex justify-between items-center border-b pb-1"><span>${materialName(r.material_id)}${r.note ? ' · ' + r.note : ''}</span><span>${isGramTracked(m) ? formatWeight(r.qty) : num(r.qty)}${delBtn('material_consumptions', r.id)}</span></div>`; })}
+    ${section('原材料消耗', c.data || [], r => `<div class="flex justify-between items-center border-b pb-1"><span>${consumptionName(r)}${r.note ? ' · ' + r.note : ''}</span><span>${consumptionQtyLabel(r)}${delBtn('material_consumptions', r.id)}</span></div>`)}
     ${section('生产记录', p.data || [], r => `<div class="flex justify-between items-center border-b pb-1"><span>${productName(r.product_id)}${r.note ? ' · ' + r.note : ''}</span><span>${num(r.qty)}${delBtn('production_records', r.id)}</span></div>`)}
     ${section('出货记录', s.data || [], r => `<div class="flex justify-between items-center border-b pb-1"><span>${productName(r.product_id)}${r.destination ? ' → ' + r.destination : ''}</span><span>${num(r.qty)}${delBtn('shipment_records', r.id)}</span></div>`)}
     ${section('原材料入库', pu.data || [], r => { const m = materials.find(x => x.id === r.material_id); return `<div class="flex justify-between items-center border-b pb-1"><span>${materialName(r.material_id)}${r.note ? ' · ' + r.note : ''}</span><span>${num(r.qty)} ${m ? m.unit : ''}${delBtn('material_purchases', r.id)}</span></div>`; })}
@@ -855,7 +917,8 @@ function buildDailyReportHTML(d) {
   const genTime = new Date().toLocaleString('zh-CN');
   const consumeRows = d.c.map(r => {
     const m = materials.find(x => x.id === r.material_id);
-    return { name: materialName(r.material_id), qty: isGramTracked(m) ? formatWeight(r.qty) : num(r.qty), price: money(r.unit_price_snapshot) + (isGramTracked(m) ? '/g' : ''), subtotal: money(Number(r.qty) * Number(r.unit_price_snapshot || 0)), note: r.note || '' };
+    const perGram = !r.cash_item_id && isGramTracked(m);
+    return { name: consumptionName(r), qty: consumptionQtyLabel(r), price: money(r.unit_price_snapshot) + (perGram ? '/g' : ''), subtotal: money(Number(r.qty) * Number(r.unit_price_snapshot || 0)), note: r.note || '' };
   });
   const prodRows = d.p.map(r => ({ name: productName(r.product_id), qty: num(r.qty), note: r.note || '' }));
   const shipRows = d.s.map(r => ({ name: productName(r.product_id), qty: num(r.qty), dest: r.destination || '', note: r.note || '' }));
@@ -944,7 +1007,7 @@ function exportDailyCSV() {
   if (!lastDaily) return;
   const d = lastDaily;
   const rows = [['类型', '品项', '数量', '单价/成本', '备注/发往', '时间']];
-  d.c.forEach(r => { const m = materials.find(x => x.id === r.material_id); rows.push(['原材料消耗', materialName(r.material_id), isGramTracked(m) ? formatWeight(r.qty) : num(r.qty), money(r.unit_price_snapshot), r.note || '', fmtTime(r.created_at)]); });
+  d.c.forEach(r => rows.push(['原材料消耗', consumptionName(r), consumptionQtyLabel(r), money(r.unit_price_snapshot), r.note || '', fmtTime(r.created_at)]));
   d.p.forEach(r => rows.push(['生产', productName(r.product_id), num(r.qty), '', r.note || '', fmtTime(r.created_at)]));
   d.s.forEach(r => rows.push(['出货', productName(r.product_id), num(r.qty), '', r.destination || '', fmtTime(r.created_at)]));
   d.pu.forEach(r => { const m = materials.find(x => x.id === r.material_id); rows.push(['原材料入库', materialName(r.material_id), num(r.qty) + ' ' + (m ? m.unit : ''), money(r.unit_price), r.note || '', fmtTime(r.created_at)]); });

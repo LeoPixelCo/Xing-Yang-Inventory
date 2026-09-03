@@ -90,9 +90,12 @@ drop policy if exists "allow all" on cash_purchases;
 create policy "allow all" on cash_purchases for all using (true) with check (true);
 
 -- 原材料消耗 (每日记录)
+-- 消耗记录可以记两种东西:原材料库里的(material_id),或现金采购品项(cash_item_id),
+-- 两个字段只会有一个有值。现金采购的品项虽然不进原材料入库/库存,但用掉了要能记、成本要算。
 create table if not exists material_consumptions (
   id uuid primary key default gen_random_uuid(),
   material_id uuid references materials(id) on delete set null,
+  cash_item_id uuid references cash_items(id) on delete set null,
   qty numeric not null,     -- 克重类原材料=消耗的克数;否则按 unit 计
   unit_price_snapshot numeric not null default 0, -- 记录当时"每 1 个 qty 单位"的单价
                              -- (克重类=每克成本,否则=每 unit 成本),成本计算更准确
