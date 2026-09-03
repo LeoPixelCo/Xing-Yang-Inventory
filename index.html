@@ -12,6 +12,7 @@
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   body { -webkit-tap-highlight-color: transparent; }
   .nav-btn.active { color: #0f766e; }
@@ -349,6 +350,11 @@
     </div>
 
     <div id="settings-materials" class="settings-panel">
+      <div class="flex gap-2 mb-3">
+        <button type="button" class="flex-1 border border-teal-700 text-teal-700 rounded-lg py-2 text-sm" onclick="exportSettingsXlsx('materials')">导出 Excel</button>
+        <button type="button" class="flex-1 border border-teal-700 text-teal-700 rounded-lg py-2 text-sm" onclick="document.getElementById('importMaterialsFile').click()">导入 Excel</button>
+        <input type="file" id="importMaterialsFile" accept=".xlsx,.xls" class="hidden" onchange="importSettingsXlsx('materials', this)" />
+      </div>
       <form id="materialForm" class="bg-white rounded-xl p-4 shadow-sm space-y-2 mb-4">
         <input type="hidden" name="id" />
         <div class="grid grid-cols-2 gap-2">
@@ -377,6 +383,11 @@
     </div>
 
     <div id="settings-products" class="settings-panel hidden">
+      <div class="flex gap-2 mb-3">
+        <button type="button" class="flex-1 border border-teal-700 text-teal-700 rounded-lg py-2 text-sm" onclick="exportSettingsXlsx('products')">导出 Excel</button>
+        <button type="button" class="flex-1 border border-teal-700 text-teal-700 rounded-lg py-2 text-sm" onclick="document.getElementById('importProductsFile').click()">导入 Excel</button>
+        <input type="file" id="importProductsFile" accept=".xlsx,.xls" class="hidden" onchange="importSettingsXlsx('products', this)" />
+      </div>
       <form id="productForm" class="bg-white rounded-xl p-4 shadow-sm space-y-2 mb-4">
         <input type="hidden" name="id" />
         <div class="grid grid-cols-2 gap-2">
@@ -402,6 +413,11 @@
     </div>
 
     <div id="settings-cashitems" class="settings-panel hidden">
+      <div class="flex gap-2 mb-3">
+        <button type="button" class="flex-1 border border-teal-700 text-teal-700 rounded-lg py-2 text-sm" onclick="exportSettingsXlsx('cash_items')">导出 Excel</button>
+        <button type="button" class="flex-1 border border-teal-700 text-teal-700 rounded-lg py-2 text-sm" onclick="document.getElementById('importCashItemsFile').click()">导入 Excel</button>
+        <input type="file" id="importCashItemsFile" accept=".xlsx,.xls" class="hidden" onchange="importSettingsXlsx('cash_items', this)" />
+      </div>
       <form id="cashItemForm" class="bg-white rounded-xl p-4 shadow-sm space-y-2 mb-4">
         <input type="hidden" name="id" />
         <div class="grid grid-cols-2 gap-2">
@@ -449,7 +465,7 @@
 
 <div id="printArea"></div>
 
-<script src="config.js?v=1788434415"></script>
-<script src="app.js?v=1788434415"></script>
+<script src="config.js?v=1788435141"></script>
+<script src="app.js?v=1788435141"></script>
 </body>
 </html>

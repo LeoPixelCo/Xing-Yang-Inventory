@@ -1200,6 +1200,121 @@ $('#cashItemForm').addEventListener('submit', async e => {
   await Promise.all([loadCashItems(), renderCashItemTable()]);
 });
 
+// -------------------- 设置页:导出/导入 Excel(批量编辑) --------------------
+// 每张表的列定义:key=数据库字段,label=Excel 表头,type=写回时怎么转换
+const XLSX_TABLES = {
+  materials: {
+    fileName: '原材料库',
+    reload: async () => { await loadMaterials(); await renderMaterialTable(); },
+    cols: [
+      { key: 'id', label: 'id(勿改)', type: 'text' },
+      { key: 'item_code', label: '编号', type: 'text' },
+      { key: 'name', label: '名称', type: 'text', required: true },
+      { key: 'unit', label: '采购单位', type: 'text', required: true },
+      { key: 'unit_price', label: '采购单价RM', type: 'number' },
+      { key: 'pack_qty_grams', label: '每采购单位克数', type: 'numberOrNull' },
+      { key: 'reorder_threshold', label: '预警线', type: 'number' },
+      { key: 'opening_stock', label: '期初库存', type: 'number' },
+      { key: 'archived', label: '已归档', type: 'bool' }
+    ]
+  },
+  products: {
+    fileName: '产品库',
+    reload: async () => { await loadProducts(); await renderProductTable(); },
+    cols: [
+      { key: 'id', label: 'id(勿改)', type: 'text' },
+      { key: 'item_code', label: '编号', type: 'text' },
+      { key: 'name', label: '名称', type: 'text', required: true },
+      { key: 'unit', label: '单位', type: 'text', required: true },
+      { key: 'reorder_threshold', label: '预警线', type: 'number' },
+      { key: 'opening_stock', label: '期初库存', type: 'number' },
+      { key: 'archived', label: '已归档', type: 'bool' }
+    ]
+  },
+  cash_items: {
+    fileName: '现金采购品项',
+    reload: async () => { await loadCashItems(); await renderCashItemTable(); },
+    cols: [
+      { key: 'id', label: 'id(勿改)', type: 'text' },
+      { key: 'name', label: '品项名称', type: 'text', required: true },
+      { key: 'unit', label: '单位', type: 'text', required: true },
+      { key: 'last_price', label: '最近价格RM', type: 'number' },
+      { key: 'archived', label: '已归档', type: 'bool' }
+    ]
+  }
+};
+
+window.exportSettingsXlsx = async function (tableKey) {
+  const cfg = XLSX_TABLES[tableKey];
+  const { data, error } = await sb.from(tableKey).select('*').order('archived').order('name');
+  if (error) { toast('导出失败: ' + error.message, true); return; }
+  const rows = (data || []).map(r => {
+    const o = {};
+    cfg.cols.forEach(c => {
+      let v = r[c.key];
+      if (c.type === 'bool') v = v ? '是' : '';
+      if (v === null || v === undefined) v = '';
+      o[c.label] = v;
+    });
+    return o;
+  });
+  const ws = XLSX.utils.json_to_sheet(rows, { header: cfg.cols.map(c => c.label) });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, cfg.fileName);
+  XLSX.writeFile(wb, `${cfg.fileName}_${todayStr()}.xlsx`);
+  toast('已导出');
+};
+
+window.importSettingsXlsx = async function (tableKey, input) {
+  const file = input.files && input.files[0];
+  input.value = ''; // 清掉,方便下次选同一个文件也能触发
+  if (!file) return;
+  const cfg = XLSX_TABLES[tableKey];
+  try {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const raw = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+    if (!raw.length) { toast('这个文件里没有数据', true); return; }
+
+    const updates = [], inserts = [], skipped = [];
+    raw.forEach((r, idx) => {
+      const row = {};
+      let bad = null;
+      cfg.cols.forEach(c => {
+        if (c.key === 'id') return;
+        const v = r[c.label];
+        if (c.type === 'text') row[c.key] = (v === '' || v == null) ? null : String(v).trim();
+        else if (c.type === 'bool') row[c.key] = (String(v).trim() === '是' || v === true);
+        else if (c.type === 'numberOrNull') row[c.key] = (v === '' || v == null) ? null : Number(v);
+        else row[c.key] = Number(v) || 0;
+        if (c.required && !row[c.key]) bad = c.label;
+      });
+      if (bad) { skipped.push(`第 ${idx + 2} 行(缺少${bad})`); return; }
+      const id = String(r[cfg.cols[0].label] || '').trim();
+      if (id) { row.id = id; updates.push(row); } else { inserts.push(row); }
+    });
+
+    const msg = `准备写入「${cfg.fileName}」:\n更新 ${updates.length} 条,新增 ${inserts.length} 条` +
+      (skipped.length ? `\n跳过 ${skipped.length} 条:${skipped.slice(0, 5).join('、')}${skipped.length > 5 ? '…' : ''}` : '') +
+      `\n\n注意:表格里没有的品项不会被删除。确定吗?`;
+    if (!confirm(msg)) return;
+
+    if (updates.length) {
+      const { error } = await sb.from(tableKey).upsert(updates);
+      if (error) throw error;
+    }
+    if (inserts.length) {
+      const { error } = await sb.from(tableKey).insert(inserts);
+      if (error) throw error;
+    }
+    toast(`已更新 ${updates.length} 条,新增 ${inserts.length} 条`);
+    await cfg.reload();
+  } catch (err) {
+    toast('导入失败: ' + err.message, true);
+  }
+};
+
 // -------------------- 启动 --------------------
 (async function start() {
   const savedLang = safeStorage.get('ledger_lang');
