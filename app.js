@@ -277,9 +277,9 @@ function consumptionName(r) {
   return r.cash_item_id ? cashItemName(r.cash_item_id) : materialName(r.material_id);
 }
 function consumptionQtyLabel(r) {
-  if (r.cash_item_id) return num(r.qty) + ' ' + cashItemUnit(r.cash_item_id);
-  const m = materials.find(x => x.id === r.material_id);
-  return isGramTracked(m) ? formatWeight(r.qty) : num(r.qty) + (m ? ' ' + m.unit : '');
+  const obj = r.cash_item_id ? cashItems.find(x => x.id === r.cash_item_id) : materials.find(x => x.id === r.material_id);
+  if (isGramTracked(obj)) return formatWeight(r.qty);
+  return num(r.qty) + (obj ? ' ' + obj.unit : '');
 }
 
 // 选了品项之后:显示单位、把上次的价钱自动填进单价栏(可以改);
@@ -323,7 +323,13 @@ function resolveTarget(v) {
   }
   if (v.startsWith('c:')) {
     const i = cashItems.find(x => x.id === v.slice(2));
-    if (i) return { kind: 'cash', obj: i, gram: false, unit: i.unit, price: Number(i.last_price) || 0 };
+    // 现金品项也支持克重换算:填了 pack_qty_grams 就按克记、按每克算钱
+    // (注意现金品项的价格字段叫 last_price,不是 unit_price)
+    if (i) {
+      const gram = isGramTracked(i);
+      const price = Number(i.last_price) || 0;
+      return { kind: 'cash', obj: i, gram, unit: gram ? 'g' : i.unit, price: gram ? price / Number(i.pack_qty_grams) : price };
+    }
   }
   return null;
 }
@@ -431,6 +437,11 @@ $all('.settings-tab-btn').forEach(btn => btn.addEventListener('click', () => {
   btn.classList.add('active');
   $all('.settings-panel').forEach(p => p.classList.add('hidden'));
   $(`#settings-${btn.dataset.settings}`).classList.remove('hidden');
+  // 切过来的时候重新拉一次,别显示过期的旧数据(比如别人在另一台手机上改过)
+  if (!sb) return;
+  if (btn.dataset.settings === 'materials') renderMaterialTable();
+  if (btn.dataset.settings === 'products') renderProductTable();
+  if (btn.dataset.settings === 'cashitems') renderCashItemTable();
 }));
 
 // -------------------- 上传照片 --------------------
@@ -1244,6 +1255,7 @@ async function renderCashItemTable() {
       <td class="px-3 py-2">${i.name}</td>
       <td class="px-3 py-2 text-center whitespace-nowrap">${i.unit}</td>
       <td class="px-3 py-2 text-center whitespace-nowrap">${money(i.last_price)}</td>
+      <td class="px-3 py-2 text-center whitespace-nowrap">${isGramTracked(i) ? money((Number(i.last_price) || 0) / Number(i.pack_qty_grams)) + '/g' : '—'}</td>
       <td class="px-3 py-2 text-right whitespace-nowrap">
         <button class="text-teal-700 text-xs mr-2" onclick="editCashItem('${i.id}')">编辑</button>
         <button class="text-gray-400 text-xs" onclick="toggleArchiveCashItem('${i.id}', ${!i.archived})">${i.archived ? '恢复' : '归档'}</button>
@@ -1256,6 +1268,7 @@ window.editCashItem = async function (id) {
   if (!i) return;
   const f = $('#cashItemForm');
   f.id.value = i.id; f.name.value = i.name; f.unit.value = i.unit; f.last_price.value = i.last_price;
+  f.pack_qty_grams.value = i.pack_qty_grams || '';
   $('#cashItemCancelEdit').classList.remove('hidden');
   window.scrollTo({ top: 0, behavior: 'smooth' });
 };
@@ -1270,7 +1283,12 @@ $('#cashItemForm').addEventListener('submit', async e => {
   e.preventDefault();
   const fd = new FormData(e.target);
   const id = fd.get('id');
-  const row = { name: fd.get('name'), unit: fd.get('unit'), last_price: Number(fd.get('last_price')) || 0 };
+  const packQty = fd.get('pack_qty_grams');
+  const row = {
+    name: fd.get('name'), unit: fd.get('unit'),
+    last_price: Number(fd.get('last_price')) || 0,
+    pack_qty_grams: packQty ? Number(packQty) : null
+  };
   const { error } = id ? await sb.from('cash_items').update(row).eq('id', id) : await sb.from('cash_items').insert(row);
   if (error) { toast('保存失败: ' + error.message, true); return; }
   toast('已保存');
@@ -1317,6 +1335,7 @@ const XLSX_TABLES = {
       { key: 'name', label: '品项名称', type: 'text', required: true },
       { key: 'unit', label: '单位', type: 'text', required: true },
       { key: 'last_price', label: '最近价格RM', type: 'number' },
+      { key: 'pack_qty_grams', label: '每单位克数', type: 'numberOrNull' },
       { key: 'archived', label: '已归档', type: 'bool' }
     ]
   }

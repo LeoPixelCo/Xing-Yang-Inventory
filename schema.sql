@@ -67,12 +67,15 @@ alter table material_purchases add column if not exists qty_base numeric;
 create table if not exists cash_items (
   id uuid primary key default gen_random_uuid(),
   name text not null,
-  unit text not null,
+  unit text not null,                     -- 采购单位(买的时候按这个数,如 PKT/BTL/KG)
   last_price numeric not null default 0,  -- 最近一次买的价钱,选品项时自动带出来,当场可改
+  pack_qty_grams numeric,                 -- 每 1 个采购单位=多少克(如"500G 一包"就填 500);
+                                          -- 填了之后记消耗/配方就能按克算,规则跟原材料一样
   archived boolean not null default false,
   created_at timestamptz not null default now()
 );
 alter table cash_items add column if not exists last_price numeric not null default 0;
+alter table cash_items add column if not exists pack_qty_grams numeric;
 alter table cash_items enable row level security;
 drop policy if exists "allow all" on cash_items;
 create policy "allow all" on cash_items for all using (true) with check (true);

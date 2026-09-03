@@ -424,8 +424,9 @@
           <input name="name" placeholder="品项名称" required class="border rounded-lg px-3 py-2 col-span-2" />
           <input name="unit" placeholder="单位(如 PKT/KG/BTL)" required class="border rounded-lg px-3 py-2" />
           <input name="last_price" type="number" step="any" placeholder="最近价格 (RM)" class="border rounded-lg px-3 py-2" />
+          <input name="pack_qty_grams" type="number" step="any" placeholder="每单位=?克(选填,如 500G 一包填 500)" class="border rounded-lg px-3 py-2 col-span-2" />
         </div>
-        <p class="text-xs text-gray-400">这份清单是给「记录 → 现金采购」用的,跟原材料库分开,不会影响原材料库存。价格会在每次记现金采购时自动更新成最新那次的价钱。</p>
+        <p class="text-xs text-gray-400">这份清单是给「记录 → 现金采购」用的,跟原材料库分开,不会影响原材料库存。价格会在每次记现金采购时自动更新成最新那次的价钱。<br />填了"每单位=?克"之后(比如 500G 一包的胡椒粉填 500),记消耗和成本计算就能按【克】填,成本自动按每克算;买的时候还是照常按包/瓶填。</p>
         <div class="flex gap-2">
           <button type="submit" class="flex-1 bg-teal-700 text-white rounded-lg py-2 text-sm">保存品项</button>
           <button type="button" id="cashItemCancelEdit" class="hidden px-4 border rounded-lg text-sm">取消编辑</button>
@@ -434,7 +435,7 @@
       <div class="overflow-x-auto bg-white rounded-xl shadow-sm">
         <table class="text-sm" id="cashItemTable">
           <thead class="bg-gray-100 text-gray-500">
-            <tr><th class="text-left px-3 py-2 whitespace-nowrap">品项名称</th><th class="px-3 py-2 whitespace-nowrap">单位</th><th class="px-3 py-2 whitespace-nowrap">最近价格</th><th class="px-3 py-2 whitespace-nowrap"></th></tr>
+            <tr><th class="text-left px-3 py-2 whitespace-nowrap">品项名称</th><th class="px-3 py-2 whitespace-nowrap">单位</th><th class="px-3 py-2 whitespace-nowrap">最近价格</th><th class="px-3 py-2 whitespace-nowrap">每克成本</th><th class="px-3 py-2 whitespace-nowrap"></th></tr>
           </thead>
           <tbody></tbody>
         </table>
@@ -465,7 +466,7 @@
 
 <div id="printArea"></div>
 
-<script src="config.js?v=1788437312"></script>
-<script src="app.js?v=1788437312"></script>
+<script src="config.js?v=1788437866"></script>
+<script src="app.js?v=1788437866"></script>
 </body>
 </html>
