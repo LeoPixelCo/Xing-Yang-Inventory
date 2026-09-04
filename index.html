@@ -22,6 +22,12 @@
   .subtab-btn.active { background: #0f766e; color: white; }
   .lang-btn.active { background: #0f766e; color: white; border-color: #0f766e; }
   input, select, textarea { font-size: 16px; } /* 防止iOS自动缩放 */
+  /* 图表容器:固定高度,配合 maintainAspectRatio:false,窗口变宽时图表不会跟着变高 */
+  .chart-box { position: relative; height: 200px; }
+  @media (min-width: 1024px) {
+    input, select, textarea { font-size: 14px; }   /* 桌面不需要防缩放,字号收小一点更耐看 */
+    .chart-box { height: 280px; }
+  }
   ::-webkit-scrollbar { height: 6px; width: 6px; }
 
   /* -------- 打印/导出 PDF 用的报告样式 -------- */
@@ -58,17 +64,19 @@
   </form>
 </div>
 
-<header class="sticky top-0 z-20 bg-teal-700 text-white px-3 py-2 flex items-center justify-between gap-2 shadow">
-  <h1 class="text-base font-semibold truncate" id="pageTitle" data-i18n="appTitle">电子台账</h1>
+<header class="sticky top-0 z-20 bg-teal-700 text-white shadow">
+ <div class="mx-auto w-full max-w-xl md:max-w-3xl lg:max-w-6xl px-3 md:px-5 py-2 flex items-center justify-between gap-2">
+  <h1 class="text-base md:text-lg font-semibold truncate" id="pageTitle" data-i18n="appTitle">电子台账</h1>
   <div class="flex items-center gap-1 flex-wrap justify-end shrink-0">
     <button id="langBtn" class="text-[11px] leading-none px-2 py-1 rounded-full bg-teal-800">🌐</button>
     <span id="roleTag" class="text-[11px] leading-none px-2 py-1 rounded-full bg-teal-800 hidden"></span>
     <span id="connStatus" class="text-[11px] leading-none px-2 py-1 rounded-full bg-teal-800">连接中…</span>
     <button id="switchRoleBtn" class="text-[11px] leading-none px-2 py-1 rounded-full bg-teal-800 hidden" data-i18n="switchRole">切换</button>
   </div>
+ </div>
 </header>
 
-<main class="max-w-xl mx-auto p-3 pb-24">
+<main class="max-w-xl md:max-w-3xl lg:max-w-6xl mx-auto p-3 md:p-5 pb-24">
 
   <!-- ============ 记录 ============ -->
   <section id="tab-record" class="tab-panel active">
@@ -80,6 +88,8 @@
       <button data-sub="cashbuy" class="subtab-btn whitespace-nowrap px-3 py-1.5 rounded-full border border-teal-700 text-teal-700 text-sm" data-i18n="subCashBuy">现金采购</button>
     </div>
 
+    <div class="lg:grid lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)] lg:gap-5 lg:items-start">
+    <div>
     <!-- 消耗 -->
     <form id="form-consume" class="record-form space-y-3 bg-white rounded-xl p-4 shadow-sm">
       <div>
@@ -214,14 +224,18 @@
       <button type="submit" class="w-full bg-teal-700 text-white rounded-lg py-2.5 font-medium" data-i18n="btnSubmitCashBuy">提交现金采购记录</button>
     </form>
 
-    <div class="mt-4">
+    </div>
+    <div class="mt-4 lg:mt-0">
       <h3 class="text-sm font-medium text-gray-500 mb-2" data-i18n="recentTitle">最近记录</h3>
       <div id="recentList" class="space-y-2"></div>
+    </div>
     </div>
   </section>
 
   <!-- ============ 库存 ============ -->
   <section id="tab-stock" class="tab-panel">
+    <div class="lg:grid lg:grid-cols-2 lg:gap-5 lg:items-start">
+    <div>
     <h2 class="font-semibold mb-2">原材料库存</h2>
     <div class="overflow-x-auto bg-white rounded-xl shadow-sm mb-4">
       <table class="w-full text-sm" id="materialStockTable">
@@ -231,6 +245,8 @@
         <tbody></tbody>
       </table>
     </div>
+    </div>
+    <div>
     <h2 class="font-semibold mb-2">产品库存</h2>
     <div class="overflow-x-auto bg-white rounded-xl shadow-sm">
       <table class="w-full text-sm" id="productStockTable">
@@ -239,6 +255,8 @@
         </thead>
         <tbody></tbody>
       </table>
+    </div>
+    </div>
     </div>
   </section>
 
@@ -253,9 +271,11 @@
         <option value="90">90 天</option>
       </select>
     </div>
-    <div class="bg-white rounded-xl p-3 shadow-sm mb-4">
-      <canvas id="costChart" height="160"></canvas>
+    <div class="lg:grid lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:gap-5 lg:items-start">
+    <div class="bg-white rounded-xl p-3 shadow-sm mb-4 lg:mb-0">
+      <div class="chart-box"><canvas id="costChart"></canvas></div>
     </div>
+    <div>
     <div class="bg-white rounded-xl p-3 shadow-sm mb-4 flex justify-between items-center">
       <span class="text-sm text-gray-500">区间总成本</span>
       <span id="costTotal" class="text-xl font-semibold text-teal-700">RM 0.00</span>
@@ -268,6 +288,8 @@
         <tbody></tbody>
       </table>
     </div>
+    </div>
+    </div>
   </section>
 
   <!-- ============ 成本计算 ============ -->
@@ -279,9 +301,12 @@
       </select>
     </div>
 
+    <div class="lg:grid lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-5 lg:items-start">
+    <div>
     <div id="calcRows" class="space-y-2 mb-3"></div>
     <button id="calcAddRowBtn" type="button" class="w-full border border-teal-700 text-teal-700 rounded-lg py-2 text-sm mb-3">+ 添加原材料</button>
-
+    </div>
+    <div class="lg:sticky lg:top-16">
     <div class="bg-white rounded-xl p-4 shadow-sm mb-3 space-y-2">
       <div class="flex items-center justify-between">
         <span class="text-sm text-gray-500">这次产出数量</span>
@@ -305,11 +330,13 @@
       <button id="calcSaveBtn" type="button" class="flex-1 bg-teal-700 text-white rounded-lg py-2 text-sm hidden">保存为标准配方</button>
     </div>
     <button id="calcClearBtn" type="button" class="w-full text-gray-400 text-xs py-1">清空重新算</button>
+    </div>
+    </div>
   </section>
 
   <!-- ============ 日报 ============ -->
   <section id="tab-daily" class="tab-panel">
-    <div class="flex items-center gap-2 mb-3">
+    <div class="flex items-center gap-2 mb-3 lg:max-w-2xl">
       <input id="dailyDate" type="date" class="border rounded-lg px-3 py-2 text-sm flex-1" />
       <button id="exportDailyPdfBtn" class="text-sm px-3 py-2 border rounded-lg border-teal-700 text-teal-700 whitespace-nowrap">导出 PDF</button>
       <button id="exportDailyCsvBtn" class="text-sm px-3 py-2 border rounded-lg border-teal-700 text-teal-700 whitespace-nowrap">导出 CSV</button>
@@ -319,21 +346,23 @@
 
   <!-- ============ 总览 ============ -->
   <section id="tab-overview" class="tab-panel">
-    <div class="grid grid-cols-2 gap-2 mb-3">
+    <div class="grid grid-cols-2 gap-2 mb-3 lg:max-w-md">
       <input id="ovFrom" type="date" class="border rounded-lg px-2 py-2 text-sm" />
       <input id="ovTo" type="date" class="border rounded-lg px-2 py-2 text-sm" />
     </div>
-    <div class="bg-white rounded-xl p-3 shadow-sm mb-3">
-      <h3 class="text-sm font-medium text-gray-500 mb-1">原材料消耗趋势</h3>
-      <canvas id="consumeChart" height="140"></canvas>
-    </div>
-    <div class="bg-white rounded-xl p-3 shadow-sm mb-3">
-      <h3 class="text-sm font-medium text-gray-500 mb-1">生产 / 出货趋势</h3>
-      <canvas id="prodShipChart" height="140"></canvas>
-    </div>
-    <div class="bg-white rounded-xl p-3 shadow-sm mb-3">
-      <h3 class="text-sm font-medium text-gray-500 mb-1">成本趋势</h3>
-      <canvas id="overviewCostChart" height="140"></canvas>
+    <div class="lg:grid lg:grid-cols-2 lg:gap-5">
+      <div class="bg-white rounded-xl p-3 shadow-sm mb-3">
+        <h3 class="text-sm font-medium text-gray-500 mb-1">原材料消耗趋势</h3>
+        <div class="chart-box"><canvas id="consumeChart"></canvas></div>
+      </div>
+      <div class="bg-white rounded-xl p-3 shadow-sm mb-3">
+        <h3 class="text-sm font-medium text-gray-500 mb-1">生产 / 出货趋势</h3>
+        <div class="chart-box"><canvas id="prodShipChart"></canvas></div>
+      </div>
+      <div class="bg-white rounded-xl p-3 shadow-sm mb-3 lg:col-span-2">
+        <h3 class="text-sm font-medium text-gray-500 mb-1">成本趋势</h3>
+        <div class="chart-box"><canvas id="overviewCostChart"></canvas></div>
+      </div>
     </div>
     <div class="bg-white rounded-xl p-3 shadow-sm">
       <h3 class="text-sm font-medium text-gray-500 mb-2">照片归档</h3>
@@ -350,12 +379,12 @@
     </div>
 
     <div id="settings-materials" class="settings-panel">
-      <div class="flex gap-2 mb-3">
+      <div class="flex gap-2 mb-3 lg:max-w-xl">
         <button type="button" class="flex-1 border border-teal-700 text-teal-700 rounded-lg py-2 text-sm" onclick="exportSettingsXlsx('materials')">导出 Excel</button>
         <button type="button" class="flex-1 border border-teal-700 text-teal-700 rounded-lg py-2 text-sm" onclick="document.getElementById('importMaterialsFile').click()">导入 Excel</button>
         <input type="file" id="importMaterialsFile" accept=".xlsx,.xls" class="hidden" onchange="importSettingsXlsx('materials', this)" />
       </div>
-      <form id="materialForm" class="bg-white rounded-xl p-4 shadow-sm space-y-2 mb-4">
+      <form id="materialForm" class="bg-white rounded-xl p-4 shadow-sm space-y-2 mb-4 lg:max-w-3xl">
         <input type="hidden" name="id" />
         <div class="grid grid-cols-2 gap-2">
           <input name="item_code" placeholder="原材料编号(选填,如 W-1004)" class="border rounded-lg px-3 py-2 col-span-2" />
@@ -372,7 +401,7 @@
           <button type="button" id="materialCancelEdit" class="hidden px-4 border rounded-lg text-sm">取消编辑</button>
         </div>
       </form>
-      <div class="overflow-x-auto bg-white rounded-xl shadow-sm">
+      <div class="overflow-x-auto bg-white rounded-xl shadow-sm lg:inline-block lg:max-w-full lg:align-top">
         <table class="text-sm" id="materialTable">
           <thead class="bg-gray-100 text-gray-500">
             <tr><th class="text-left px-3 py-2 whitespace-nowrap">编号</th><th class="text-left px-3 py-2 whitespace-nowrap">名称</th><th class="px-3 py-2 whitespace-nowrap">单位</th><th class="px-3 py-2 whitespace-nowrap">单价</th><th class="px-3 py-2 whitespace-nowrap">每克</th><th class="px-3 py-2 whitespace-nowrap">预警</th><th class="px-3 py-2 whitespace-nowrap">期初</th><th class="px-3 py-2 whitespace-nowrap"></th></tr>
@@ -383,12 +412,12 @@
     </div>
 
     <div id="settings-products" class="settings-panel hidden">
-      <div class="flex gap-2 mb-3">
+      <div class="flex gap-2 mb-3 lg:max-w-xl">
         <button type="button" class="flex-1 border border-teal-700 text-teal-700 rounded-lg py-2 text-sm" onclick="exportSettingsXlsx('products')">导出 Excel</button>
         <button type="button" class="flex-1 border border-teal-700 text-teal-700 rounded-lg py-2 text-sm" onclick="document.getElementById('importProductsFile').click()">导入 Excel</button>
         <input type="file" id="importProductsFile" accept=".xlsx,.xls" class="hidden" onchange="importSettingsXlsx('products', this)" />
       </div>
-      <form id="productForm" class="bg-white rounded-xl p-4 shadow-sm space-y-2 mb-4">
+      <form id="productForm" class="bg-white rounded-xl p-4 shadow-sm space-y-2 mb-4 lg:max-w-3xl">
         <input type="hidden" name="id" />
         <div class="grid grid-cols-2 gap-2">
           <input name="item_code" placeholder="产品编号(选填,如 B-0003)" class="border rounded-lg px-3 py-2 col-span-2" />
@@ -402,7 +431,7 @@
           <button type="button" id="productCancelEdit" class="hidden px-4 border rounded-lg text-sm">取消编辑</button>
         </div>
       </form>
-      <div class="overflow-x-auto bg-white rounded-xl shadow-sm">
+      <div class="overflow-x-auto bg-white rounded-xl shadow-sm lg:inline-block lg:max-w-full lg:align-top">
         <table class="text-sm" id="productTable">
           <thead class="bg-gray-100 text-gray-500">
             <tr><th class="text-left px-3 py-2 whitespace-nowrap">编号</th><th class="text-left px-3 py-2 whitespace-nowrap">名称</th><th class="px-3 py-2 whitespace-nowrap">单位</th><th class="px-3 py-2 whitespace-nowrap">预警</th><th class="px-3 py-2 whitespace-nowrap">期初</th><th class="px-3 py-2 whitespace-nowrap"></th></tr>
@@ -413,12 +442,12 @@
     </div>
 
     <div id="settings-cashitems" class="settings-panel hidden">
-      <div class="flex gap-2 mb-3">
+      <div class="flex gap-2 mb-3 lg:max-w-xl">
         <button type="button" class="flex-1 border border-teal-700 text-teal-700 rounded-lg py-2 text-sm" onclick="exportSettingsXlsx('cash_items')">导出 Excel</button>
         <button type="button" class="flex-1 border border-teal-700 text-teal-700 rounded-lg py-2 text-sm" onclick="document.getElementById('importCashItemsFile').click()">导入 Excel</button>
         <input type="file" id="importCashItemsFile" accept=".xlsx,.xls" class="hidden" onchange="importSettingsXlsx('cash_items', this)" />
       </div>
-      <form id="cashItemForm" class="bg-white rounded-xl p-4 shadow-sm space-y-2 mb-4">
+      <form id="cashItemForm" class="bg-white rounded-xl p-4 shadow-sm space-y-2 mb-4 lg:max-w-3xl">
         <input type="hidden" name="id" />
         <div class="grid grid-cols-2 gap-2">
           <input name="name" placeholder="品项名称" required class="border rounded-lg px-3 py-2 col-span-2" />
@@ -432,7 +461,7 @@
           <button type="button" id="cashItemCancelEdit" class="hidden px-4 border rounded-lg text-sm">取消编辑</button>
         </div>
       </form>
-      <div class="overflow-x-auto bg-white rounded-xl shadow-sm">
+      <div class="overflow-x-auto bg-white rounded-xl shadow-sm lg:inline-block lg:max-w-full lg:align-top">
         <table class="text-sm" id="cashItemTable">
           <thead class="bg-gray-100 text-gray-500">
             <tr><th class="text-left px-3 py-2 whitespace-nowrap">品项名称</th><th class="px-3 py-2 whitespace-nowrap">单位</th><th class="px-3 py-2 whitespace-nowrap">最近价格</th><th class="px-3 py-2 whitespace-nowrap">每克成本</th><th class="px-3 py-2 whitespace-nowrap"></th></tr>
@@ -445,7 +474,8 @@
 
 </main>
 
-<nav class="fixed bottom-0 inset-x-0 bg-white border-t flex justify-around py-1.5 z-20">
+<nav class="fixed bottom-0 inset-x-0 bg-white border-t z-20">
+ <div class="mx-auto w-full max-w-xl md:max-w-2xl flex justify-around py-1.5">
   <button data-tab="record" class="nav-btn active flex flex-col items-center text-xs text-gray-500 px-2 py-1">
     <span class="nav-icon text-lg">📝</span><span data-i18n="navRecord">记录</span></button>
   <button data-tab="stock" class="nav-btn flex flex-col items-center text-xs text-gray-500 px-2 py-1">
@@ -460,13 +490,14 @@
     <span class="nav-icon text-lg">📊</span>总览</button>
   <button data-tab="settings" class="nav-btn flex flex-col items-center text-xs text-gray-500 px-2 py-1">
     <span class="nav-icon text-lg">⚙️</span>设置</button>
+ </div>
 </nav>
 
 <div id="toast" class="fixed bottom-20 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-sm px-4 py-2 rounded-full opacity-0 pointer-events-none transition-opacity z-30"></div>
 
 <div id="printArea"></div>
 
-<script src="config.js?v=1788437866"></script>
-<script src="app.js?v=1788437866"></script>
+<script src="config.js?v=1788525576"></script>
+<script src="app.js?v=1788525576"></script>
 </body>
 </html>

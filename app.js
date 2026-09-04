@@ -690,7 +690,7 @@ async function renderCost() {
   charts.cost = new Chart($('#costChart'), {
     type: 'line',
     data: { labels, datasets: [{ label: '每日原材料成本', data: values, borderColor: '#0f766e', backgroundColor: 'rgba(15,118,110,0.1)', fill: true, tension: 0.25 }] },
-    options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+    options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
   });
 }
 $('#costRangeSelect').addEventListener('change', renderCost);
@@ -1085,7 +1085,7 @@ async function renderOverview() {
   charts.consume = new Chart($('#consumeChart'), {
     type: 'bar',
     data: { labels, datasets: [{ label: '消耗数量', data: consumeSeries, backgroundColor: '#0f766e' }] },
-    options: { plugins: { legend: { display: false } } }
+    options: { maintainAspectRatio: false, plugins: { legend: { display: false } } }
   });
 
   destroyChart('prodship');
@@ -1095,14 +1095,14 @@ async function renderOverview() {
       { label: '生产', data: prodSeries, borderColor: '#0f766e', tension: 0.25 },
       { label: '出货', data: shipSeries, borderColor: '#f59e0b', tension: 0.25 }
     ] },
-    options: { plugins: { legend: { position: 'bottom' } } }
+    options: { maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
   });
 
   destroyChart('ovcost');
   charts.ovcost = new Chart($('#overviewCostChart'), {
     type: 'line',
     data: { labels, datasets: [{ label: '成本', data: costSeries, borderColor: '#dc2626', backgroundColor: 'rgba(220,38,38,0.1)', fill: true, tension: 0.25 }] },
-    options: { plugins: { legend: { display: false } } }
+    options: { maintainAspectRatio: false, plugins: { legend: { display: false } } }
   });
 
   renderPhotoArchive(startISO, endISO);
