@@ -10,6 +10,9 @@ let products = [];
 let cashItems = []; // 现金采购品项清单(独立于原材料库)
 let charts = {}; // 保存 Chart.js 实例,重绘前先销毁
 let lastDaily = null; // 最近一次日报数据,供导出 PDF/CSV 使用
+// 消耗记录能不能记"这是为了做哪个产品"(数据库跑过 product_id 那条 ALTER 才有)。
+// 没有也能用,只是"上次做这个产品用了什么"的自动回带会关掉。
+let HAS_CONSUMPTION_PRODUCT = false;
 
 // -------------------- 工具函数 --------------------
 function $(sel, root = document) { return root.querySelector(sel); }
@@ -33,6 +36,22 @@ const I18N = {
   roleStaff: { zh: '员工模式', my: 'ဝန်ထမ်း မုဒ်', id: 'Mode Karyawan' },
   switchRole: { zh: '切换', my: 'ပြောင်းရန်', id: 'Ganti' },
   navRecord: { zh: '记录', my: 'မှတ်တမ်း', id: 'Catatan' },
+  subBatch: { zh: '做产品', my: 'ထုတ်လုပ်ရန်', id: 'Buat Produk' },
+  batchPickProduct: { zh: '今天做什么产品', my: 'ဒီနေ့ ဘာထုတ်မလဲ', id: 'Hari ini buat produk apa' },
+  batchPickFirst: { zh: '— 先选今天做的产品 —', my: '— ဒီနေ့ထုတ်မယ့် ပစ္စည်းကို ရွေးပါ —', id: '— Pilih produk dulu —' },
+  batchYield: { zh: '做出多少', my: 'ဘယ်လောက် ထုတ်မလဲ', id: 'Buat berapa banyak' },
+  batchAddRow: { zh: '+ 加别的原材料', my: '+ အခြားကုန်ကြမ်း ထည့်ရန်', id: '+ Tambah bahan lain' },
+  batchSuggest: { zh: '建议', my: 'အကြံပြုချက်', id: 'Saran' },
+  batchFromRecipe: { zh: '按标准配方带出来的用料,数量可以随便改', my: 'စံနှုန်းအရ ပါဝင်ပစ္စည်းများ ဖော်ပြထားသည်၊ အရေအတွက် ပြင်နိုင်ပါသည်', id: 'Bahan dari resep standar, jumlah boleh diubah' },
+  batchFromLast: { zh: '还没设配方,这是上次做这个产品用到的料', my: 'စံနှုန်း မသတ်မှတ်ရသေးပါ။ ဤသည်မှာ ယခင်တစ်ခါက သုံးခဲ့သော ပစ္စည်းများ', id: 'Belum ada resep; ini bahan yang dipakai terakhir kali' },
+  batchNoRecipe: { zh: '这个产品还没有配方,自己按下面的按钮加原材料就好', my: 'ဤပစ္စည်းအတွက် စံနှုန်းမရှိသေးပါ။ အောက်ကခလုတ်နှိပ်ပြီး ကုန်ကြမ်းထည့်ပါ', id: 'Produk ini belum punya resep; tambah bahan lewat tombol di bawah' },
+  batchNoRows: { zh: '选了产品就会自动列出用料', my: 'ပစ္စည်းရွေးလိုက်ရင် ကုန်ကြမ်းစာရင်း ပေါ်လာပါမည်', id: 'Pilih produk, daftar bahan akan muncul' },
+  batchNothing: { zh: '还没填任何用量', my: 'အရေအတွက် မဖြည့်ရသေးပါ', id: 'Belum ada jumlah yang diisi' },
+  batchItemsUnit: { zh: '项用料', my: 'မျိုး', id: 'bahan' },
+  batchSwitchWarn: { zh: '已经填了数量,换产品会清掉现在这些。确定吗?', my: 'အရေအတွက်များ ဖြည့်ပြီးသားဖြစ်သည်။ ပစ္စည်းပြောင်းလျှင် ပျက်သွားပါမည်။ သေချာလား?', id: 'Sudah ada jumlah terisi; ganti produk akan menghapusnya. Yakin?' },
+  batchClear: { zh: '清空重填', my: 'အားလုံး ဖျက်ရန်', id: 'Kosongkan' },
+  batchClearConfirm: { zh: '清空现在填的内容?', my: 'ဖြည့်ထားသမျှ ဖျက်မလား?', id: 'Kosongkan semua isian?' },
+  btnSubmitBatch: { zh: '提交(用料 + 产出)', my: 'မှတ်တမ်းပို့ရန် (ကုန်ကြမ်း + ထွက်ရှိ)', id: 'Kirim (bahan + hasil)' },
   subConsume: { zh: '原材料消耗', my: 'ကုန်ကြမ်းသုံးမှု', id: 'Pakai Bahan' },
   subProduce: { zh: '生产记录', my: 'ထုတ်လုပ်မှု', id: 'Produksi' },
   subShip: { zh: '出货记录', my: 'ကုန်ပို့မှု', id: 'Pengiriman' },
@@ -93,7 +112,7 @@ function setLang(l) {
   safeStorage.set('ledger_lang', l);
   applyI18n();
   if (currentRole) applyRole(currentRole); // 刷新 roleTag 文字
-  if (sb && $('#tab-record').classList.contains('active')) renderRecent(); // 刷新"最近记录"里动态生成的文字
+  if (sb && $('#tab-record').classList.contains('active')) { renderRecent(); renderBatch(); } // 刷新"最近记录"和"做产品"页里动态生成的文字
 }
 
 $all('.lang-btn').forEach(b => b.addEventListener('click', () => setLang(b.dataset.lang)));
@@ -156,7 +175,8 @@ function fmtTime(iso) {
 let currentRole = null; // 'boss' | 'manager' | 'staff'
 const STAFF_ALLOWED_TABS = ['record'];
 const ROLE_I18N_KEYS = { boss: 'roleBoss', manager: 'roleManager', staff: 'roleStaff' };
-function canDelete() { return currentRole === 'boss' || currentRole === 'manager'; }
+function canManage() { return currentRole === 'boss' || currentRole === 'manager'; }
+function canDelete() { return canManage(); }
 
 // 删除一条记录(消耗/生产/出货/入库通用)。只有老板/经理能点到这个按钮,
 // 但接口本身没有强制权限(见 README 安全性说明),这里再做一次前端拦截防误触。
@@ -182,6 +202,8 @@ function applyRole(role) {
   const isStaff = role === 'staff';
   $all('.nav-btn').forEach(b => { b.classList.toggle('hidden', isStaff && !STAFF_ALLOWED_TABS.includes(b.dataset.tab)); });
   $('#purchasePriceField')?.classList.toggle('hidden', isStaff);
+  $('#batchSaveRecipeBtn')?.classList.toggle('hidden', !canManage() || !batch.productId);
+  updateBatchCost();
   $('#roleTag').textContent = t(ROLE_I18N_KEYS[role]) || role;
   $('#roleTag').classList.remove('hidden');
   $('#switchRoleBtn').classList.remove('hidden');
@@ -259,12 +281,20 @@ async function loadCashItems() {
   loadConsumeOptions(); // 现金采购品项也要出现在"原材料消耗"的下拉里
 }
 
+async function probeConsumptionProductColumn() {
+  const { error } = await sb.from('material_consumptions').select('product_id').limit(1);
+  HAS_CONSUMPTION_PRODUCT = !error;
+  if (!error) return;
+  console.warn('material_consumptions.product_id 还没建,"上次用料"回带功能先关掉。请在 Supabase 里跑 schema.sql 里那条 alter。');
+}
+
 async function loadProducts() {
   const { data, error } = await sb.from('products').select('*').eq('archived', false).order('name');
   if (error) { toast('读取产品库失败: ' + error.message, true); return; }
   products = data || [];
   const opts = products.map(p => `<option value="${p.id}">${p.item_code ? p.item_code + ' ' : ''}${p.name}(${p.unit})</option>`).join('');
   $all('select[name="product_id"]').forEach(sel => { sel.innerHTML = opts || `<option value="">${t('selectNoProduct')}</option>`; });
+  renderBatchProductOptions();
 }
 
 function materialName(id) { const m = materials.find(x => x.id === id); return m ? m.name : '(已删除的原材料)'; }
@@ -420,7 +450,7 @@ function switchTab(tab) {
   if (tab === 'calc') renderCalc();
   if (tab === 'daily') renderDaily();
   if (tab === 'overview') renderOverview();
-  if (tab === 'record') renderRecent();
+  if (tab === 'record') { renderRecent(); renderBatch(); }
 }
 
 $all('.nav-btn').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
@@ -869,6 +899,356 @@ function renderCalc() {
   updateCalcProductButtons();
 }
 
+// -------------------- 「今天做什么」:选产品 → 自动带出用料 → 一边做一边填 --------------------
+// 员工不用在几十个原材料里翻半天:选今天做的产品,系统按标准配方(没配方就按上次做这个
+// 产品用过的料)列出清单,填数量、打勾,最后一次提交 —— 一次写入 N 条消耗 + 1 条生产记录。
+// 没填完不怕:每次改动都存在这台手机的浏览器里,关掉页面回来还在(草稿只在本机,不上传)。
+
+let batch = { productId: '', yieldQty: '', note: '', rows: [] }; // rows: {rowId,target,qty,unit,done,suggest,custom}
+let batchRowSeq = 0;
+let batchHintKey = ''; // 当前提示语用的是哪条翻译,换语言时照着重画
+const BATCH_DRAFT_KEY = 'ledger_batch_draft';
+
+function setBatchHint(key) {
+  batchHintKey = key || '';
+  const el = $('#batchHint');
+  if (el) el.textContent = key ? t(key) : '';
+}
+
+function saveBatchDraft() {
+  batch.note = $('#form-batch textarea[name="note"]')?.value || '';
+  safeStorage.set(BATCH_DRAFT_KEY, JSON.stringify(batch));
+}
+function restoreBatchDraft() {
+  try {
+    const raw = safeStorage.get(BATCH_DRAFT_KEY);
+    if (!raw) return;
+    const d = JSON.parse(raw);
+    if (d && Array.isArray(d.rows)) {
+      batch = { productId: d.productId || '', yieldQty: d.yieldQty || '', note: d.note || '', rows: d.rows };
+      batchRowSeq = batch.rows.reduce((mx, r) => Math.max(mx, Number(r.rowId) || 0), 0);
+    }
+  } catch (e) { /* 草稿坏了就当没有 */ }
+}
+function clearBatchDraft() {
+  batch = { productId: '', yieldQty: '', note: '', rows: [] };
+  safeStorage.remove(BATCH_DRAFT_KEY);
+}
+
+// 产品下拉:第一项是空的,逼员工自己选,免得默认选中第一个记错账
+function renderBatchProductOptions() {
+  const sel = $('#batchProduct');
+  if (!sel) return;
+  sel.innerHTML = `<option value="">${t('batchPickFirst')}</option>` +
+    products.map(p => `<option value="${p.id}">${p.item_code ? p.item_code + ' ' : ''}${p.name}(${p.unit})</option>`).join('');
+  sel.value = batch.productId || '';
+}
+
+// 建议用量:标准配方里存的是"每 1 份的用量",乘以今天要做的份数
+function batchSuggestFor(row) {
+  const per = Number(row.suggest) || 0;
+  const y = Number(batch.yieldQty) || 0;
+  return per > 0 && y > 0 ? per * y : 0;
+}
+
+function batchSuggestText(row) {
+  const tgt = resolveTarget(row.target);
+  const s = batchSuggestFor(row);
+  if (!tgt || !s) return '';
+  return t('batchSuggest') + ' ' + (tgt.gram ? formatWeight(s) : num(s) + ' ' + tgt.unit);
+}
+
+// 把建议用量填进输入框(员工还没自己动过这一行才填,不覆盖他填的数)
+function applyBatchSuggestions() {
+  batch.rows.forEach(row => {
+    if (row.touched) return;
+    const tgt = resolveTarget(row.target);
+    const s = batchSuggestFor(row);
+    if (!tgt || !s) return;
+    // 上千克的直接用 kg 显示,员工不用数 0
+    if (tgt.gram && s >= 1000) { row.unit = 'kg'; row.qty = Math.round(s / 100) / 10; }
+    else { row.unit = tgt.gram ? 'g' : row.unit; row.qty = Math.round(s * 100) / 100; }
+  });
+}
+
+function batchRowBaseQty(row) {
+  const qty = Number(row.qty) || 0;
+  const tgt = resolveTarget(row.target);
+  return (tgt && tgt.gram && row.unit === 'kg') ? qty * 1000 : qty;
+}
+
+function renderBatchRows() {
+  const box = $('#batchRows');
+  if (!box) return;
+  box.innerHTML = batch.rows.map(row => {
+    const tgt = resolveTarget(row.target);
+    const nameCell = row.custom
+      ? `<select class="batch-target w-full border rounded-lg px-2 py-1.5 text-sm">${targetOptionsHtml(row.target) || `<option value="">${t('selectNoMaterial')}</option>`}</select>`
+      : `<div class="text-sm font-medium leading-tight">${tgt ? tgt.obj.name : '—'}</div>`;
+    const suggest = row.custom ? '' : batchSuggestText(row);
+    const unitCell = (tgt && tgt.gram)
+      ? `<select class="batch-unit border rounded-lg px-1 py-1.5 text-xs w-14 shrink-0">
+           <option value="g"${row.unit !== 'kg' ? ' selected' : ''}>g</option>
+           <option value="kg"${row.unit === 'kg' ? ' selected' : ''}>kg</option>
+         </select>`
+      : `<span class="text-xs text-gray-400 w-14 shrink-0 text-center">${tgt ? tgt.unit : ''}</span>`;
+    return `
+      <div class="batch-row rounded-lg border p-2.5 flex items-center gap-2 ${row.done ? 'bg-teal-50 border-teal-300' : 'bg-white'}" data-row="${row.rowId}">
+        <button type="button" class="batch-done shrink-0 w-7 h-7 rounded-full border text-sm leading-none ${row.done ? 'bg-teal-700 border-teal-700 text-white' : 'border-gray-300 text-gray-300'}">✓</button>
+        <div class="flex-1 min-w-0">
+          ${nameCell}
+          ${suggest ? `<div class="text-[11px] text-gray-400 mt-0.5">${suggest}</div>` : ''}
+        </div>
+        <input type="number" step="any" min="0" value="${row.qty || ''}" placeholder="0" class="batch-qty w-16 shrink-0 border rounded-lg px-2 py-1.5 text-sm text-right" />
+        ${unitCell}
+        <button type="button" class="batch-remove shrink-0 text-red-600 text-xs px-1">✕</button>
+      </div>`;
+  }).join('') || (batch.productId ? '' : `<p class="text-sm text-gray-400 text-center py-2">${t('batchNoRows')}</p>`);
+  updateBatchCost();
+}
+
+// 成本只给老板/经理看,员工界面永远不显示价钱
+function updateBatchCost() {
+  const box = $('#batchCostBox');
+  if (!box) return;
+  box.classList.toggle('hidden', !canManage());
+  box.classList.toggle('flex', canManage());
+  if (!canManage()) { $('#batchCost').textContent = ''; return; }
+  let total = 0;
+  batch.rows.forEach(row => {
+    const tgt = resolveTarget(row.target);
+    if (tgt) total += batchRowBaseQty(row) * tgt.price;
+  });
+  $('#batchCost').textContent = money(total);
+}
+
+function renderBatch() {
+  renderBatchProductOptions();
+  const p = products.find(x => x.id === batch.productId);
+  $('#batchYield').value = batch.yieldQty || '';
+  $('#batchYieldUnit').textContent = p ? p.unit : '';
+  const noteEl = $('#form-batch textarea[name="note"]');
+  if (noteEl && batch.note && !noteEl.value) noteEl.value = batch.note;
+  setBatchHint(batchHintKey);
+  $('#batchSaveRecipeBtn').classList.toggle('hidden', !canManage() || !batch.productId);
+  renderBatchRows();
+}
+
+// 选了产品:先拿标准配方;没有配方就拿"上次做这个产品用过的料"当参考
+async function loadBatchRowsForProduct(productId) {
+  batch.rows = [];
+  if (!productId) { setBatchHint(''); renderBatch(); saveBatchDraft(); return; }
+
+  setBatchHint('loadingText');
+  const { data: recipe } = await sb.from('product_recipe').select('*').eq('product_id', productId);
+  const mkRow = (target, suggest) => ({ rowId: ++batchRowSeq, target, qty: '', unit: 'g', done: false, suggest: suggest || 0, touched: false, custom: false });
+
+  if (recipe && recipe.length) {
+    batch.rows = recipe
+      .map(r => mkRow(r.cash_item_id ? 'c:' + r.cash_item_id : 'm:' + r.material_id, Number(r.qty_per_unit) || 0))
+      .filter(r => resolveTarget(r.target));
+    setBatchHint('batchFromRecipe');
+  } else if (HAS_CONSUMPTION_PRODUCT) {
+    // 没配方:翻出上一次做这个产品记的那批用料,直接照搬清单(数量也带出来,改一下就行)
+    const { data: past } = await sb.from('material_consumptions')
+      .select('material_id, cash_item_id, qty, created_at')
+      .eq('product_id', productId).order('created_at', { ascending: false }).limit(40);
+    const rows = [];
+    if (past && past.length) {
+      const sameDay = localDateKey(past[0].created_at);
+      for (const r of past) {
+        if (localDateKey(r.created_at) !== sameDay) break;
+        const target = r.cash_item_id ? 'c:' + r.cash_item_id : 'm:' + r.material_id;
+        if (rows.some(x => x.target === target) || !resolveTarget(target)) continue;
+        const row = mkRow(target, 0);
+        const tgt = resolveTarget(target);
+        // 上次填的克数照搬;上千克的换成 kg 显示
+        if (tgt.gram && Number(r.qty) >= 1000) { row.unit = 'kg'; row.qty = Math.round(Number(r.qty) / 100) / 10; }
+        else { row.qty = Math.round(Number(r.qty) * 100) / 100; }
+        row.touched = true; // 这是上次的实际用量,不要被"建议用量"覆盖
+        rows.push(row);
+      }
+    }
+    batch.rows = rows;
+    setBatchHint(rows.length ? 'batchFromLast' : 'batchNoRecipe');
+  } else {
+    setBatchHint('batchNoRecipe');
+  }
+  applyBatchSuggestions();
+  renderBatch();
+  saveBatchDraft();
+}
+
+$('#batchProduct')?.addEventListener('change', async e => {
+  const filled = batch.rows.some(r => Number(r.qty) > 0);
+  if (filled && !confirm(t('batchSwitchWarn'))) { e.target.value = batch.productId; return; }
+  batch.productId = e.target.value;
+  const p = products.find(x => x.id === batch.productId);
+  $('#batchYieldUnit').textContent = p ? p.unit : '';
+  await loadBatchRowsForProduct(batch.productId);
+});
+
+$('#batchYield')?.addEventListener('input', e => {
+  batch.yieldQty = e.target.value;
+  applyBatchSuggestions();
+  renderBatchRows();
+  saveBatchDraft();
+});
+
+$('#form-batch textarea[name="note"]')?.addEventListener('input', saveBatchDraft);
+
+$('#batchRows')?.addEventListener('input', e => {
+  const rowEl = e.target.closest('.batch-row');
+  if (!rowEl) return;
+  const row = batch.rows.find(r => String(r.rowId) === rowEl.dataset.row);
+  if (!row || !e.target.classList.contains('batch-qty')) return;
+  row.qty = e.target.value;
+  row.touched = true;
+  updateBatchCost();
+  saveBatchDraft();
+});
+
+$('#batchRows')?.addEventListener('change', e => {
+  const rowEl = e.target.closest('.batch-row');
+  if (!rowEl) return;
+  const row = batch.rows.find(r => String(r.rowId) === rowEl.dataset.row);
+  if (!row) return;
+  if (e.target.classList.contains('batch-unit')) { row.unit = e.target.value; updateBatchCost(); }
+  if (e.target.classList.contains('batch-target')) { row.target = e.target.value; row.unit = 'g'; renderBatchRows(); }
+  saveBatchDraft();
+});
+
+$('#batchRows')?.addEventListener('click', e => {
+  const rowEl = e.target.closest('.batch-row');
+  if (!rowEl) return;
+  const row = batch.rows.find(r => String(r.rowId) === rowEl.dataset.row);
+  if (!row) return;
+  if (e.target.classList.contains('batch-done')) {
+    row.done = !row.done;
+    // 打勾但还没填数量的,就按建议用量当作已用(免得他打完勾忘了填)
+    if (row.done && !Number(row.qty)) { row.touched = false; applyBatchSuggestions(); row.touched = true; }
+    renderBatchRows();
+    saveBatchDraft();
+  }
+  if (e.target.classList.contains('batch-remove')) {
+    batch.rows = batch.rows.filter(r => r !== row);
+    renderBatchRows();
+    saveBatchDraft();
+  }
+});
+
+$('#batchAddRowBtn')?.addEventListener('click', () => {
+  batch.rows.push({ rowId: ++batchRowSeq, target: materials[0] ? 'm:' + materials[0].id : '', qty: '', unit: 'g', done: false, suggest: 0, touched: true, custom: true });
+  renderBatchRows();
+  saveBatchDraft();
+});
+
+$('#batchClearBtn')?.addEventListener('click', () => {
+  if (!confirm(t('batchClearConfirm'))) return;
+  clearBatchDraft();
+  $('#form-batch').reset();
+  setBatchHint('');
+  renderBatch();
+});
+
+// 提交:一次写入所有填了数量的用料 + 一条生产记录
+$('#form-batch').addEventListener('submit', async e => {
+  e.preventDefault();
+  const form = e.target;
+  const btn = form.querySelector('button[type="submit"]');
+  const fd = new FormData(form);
+  const yieldQty = Number($('#batchYield').value) || 0;
+  const note = fd.get('note') || null;
+
+  if (!batch.productId) { toast(t('batchPickFirst'), true); return; }
+  const useRows = batch.rows.filter(r => resolveTarget(r.target) && Number(r.qty) > 0);
+  if (!useRows.length && yieldQty <= 0) { toast(t('batchNothing'), true); return; }
+
+  btn.disabled = true;
+  const originalText = btn.textContent;
+  btn.textContent = t('toastSubmitting');
+  try {
+    let photoUrl = null;
+    const file = fd.get('photo');
+    if (file && file.size > 0) {
+      btn.textContent = t('toastUploadingPhoto');
+      photoUrl = await uploadPhoto(file);
+    }
+
+    if (useRows.length) {
+      const payload = useRows.map(r => {
+        const tgt = resolveTarget(r.target);
+        const row = {
+          material_id: tgt.kind === 'material' ? tgt.obj.id : null,
+          cash_item_id: tgt.kind === 'cash' ? tgt.obj.id : null,
+          qty: batchRowBaseQty(r),
+          unit_price_snapshot: tgt.price,
+          note,
+          photo_url: null
+        };
+        if (HAS_CONSUMPTION_PRODUCT) row.product_id = batch.productId;
+        return row;
+      });
+      const { error } = await sb.from('material_consumptions').insert(payload);
+      if (error) throw error;
+    }
+
+    if (yieldQty > 0) {
+      const { error } = await sb.from('production_records').insert({
+        product_id: batch.productId, qty: yieldQty, note, photo_url: photoUrl
+      });
+      if (error) throw error;
+    }
+
+    toast(`${t('toastSubmitted')} · ${useRows.length} ${t('batchItemsUnit')}${yieldQty > 0 ? ' + ' + num(yieldQty) : ''}`);
+    clearBatchDraft();
+    form.reset();
+    setBatchHint('');
+    renderBatch();
+    renderRecent();
+  } catch (err) {
+    toast('提交失败: ' + err.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
+});
+
+// 老板/经理:把这次填的用量存成这个产品的标准配方,下次员工选产品就自动带出来
+$('#batchSaveRecipeBtn')?.addEventListener('click', async () => {
+  if (!canManage() || !batch.productId) return;
+  const yieldQty = Number($('#batchYield').value) || 0;
+  if (yieldQty <= 0) { toast('请先填「做出多少」,才能换算成每份用量', true); return; }
+  const rows = batch.rows.filter(r => resolveTarget(r.target) && Number(r.qty) > 0);
+  if (!rows.length) { toast(t('batchNothing'), true); return; }
+  if (!confirm('保存后会覆盖这个产品之前的标准配方,确定吗?')) return;
+  const btn = $('#batchSaveRecipeBtn');
+  btn.disabled = true;
+  try {
+    const { error: delErr } = await sb.from('product_recipe').delete().eq('product_id', batch.productId);
+    if (delErr) throw delErr;
+    const payload = rows.map(r => {
+      const tgt = resolveTarget(r.target);
+      return {
+        product_id: batch.productId,
+        material_id: tgt.kind === 'material' ? tgt.obj.id : null,
+        cash_item_id: tgt.kind === 'cash' ? tgt.obj.id : null,
+        qty_per_unit: batchRowBaseQty(r) / yieldQty
+      };
+    });
+    const { error: insErr } = await sb.from('product_recipe').insert(payload);
+    if (insErr) throw insErr;
+    toast('已保存标准配方');
+    batch.rows.forEach(r => { const tgt = resolveTarget(r.target); if (tgt) r.suggest = batchRowBaseQty(r) / yieldQty; });
+    renderBatchRows();
+    saveBatchDraft();
+  } catch (err) {
+    toast('保存失败: ' + err.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 // -------------------- 日报 --------------------
 async function renderDaily() {
   const dateStr = $('#dailyDate').value || todayStr();
@@ -909,7 +1289,7 @@ async function renderDaily() {
         <div class="text-lg font-semibold text-teal-700">${money(cashTotal)}</div>
       </div>
     </div>
-    ${section('原材料消耗', c.data || [], r => `<div class="flex justify-between items-center border-b pb-1"><span>${consumptionName(r)}${r.note ? ' · ' + r.note : ''}</span><span>${consumptionQtyLabel(r)}${delBtn('material_consumptions', r.id)}</span></div>`)}
+    ${section('原材料消耗', c.data || [], r => `<div class="flex justify-between items-center border-b pb-1"><span>${consumptionName(r)}${r.product_id ? ' <span class="text-gray-400">→ ' + productName(r.product_id) + '</span>' : ''}${r.note ? ' · ' + r.note : ''}</span><span>${consumptionQtyLabel(r)}${delBtn('material_consumptions', r.id)}</span></div>`)}
     ${section('生产记录', p.data || [], r => `<div class="flex justify-between items-center border-b pb-1"><span>${productName(r.product_id)}${r.note ? ' · ' + r.note : ''}</span><span>${num(r.qty)}${delBtn('production_records', r.id)}</span></div>`)}
     ${section('出货记录', s.data || [], r => `<div class="flex justify-between items-center border-b pb-1"><span>${productName(r.product_id)}${r.destination ? ' → ' + r.destination : ''}</span><span>${num(r.qty)}${delBtn('shipment_records', r.id)}</span></div>`)}
     ${section('原材料入库', pu.data || [], r => { const m = materials.find(x => x.id === r.material_id); return `<div class="flex justify-between items-center border-b pb-1"><span>${materialName(r.material_id)}${r.note ? ' · ' + r.note : ''}</span><span>${num(r.qty)} ${m ? m.unit : ''}${delBtn('material_purchases', r.id)}</span></div>`; })}
@@ -944,7 +1324,7 @@ function buildDailyReportHTML(d) {
   const consumeRows = d.c.map(r => {
     const m = materials.find(x => x.id === r.material_id);
     const perGram = !r.cash_item_id && isGramTracked(m);
-    return { name: consumptionName(r), qty: consumptionQtyLabel(r), price: money(r.unit_price_snapshot) + (perGram ? '/g' : ''), subtotal: money(Number(r.qty) * Number(r.unit_price_snapshot || 0)), note: r.note || '' };
+    return { name: consumptionName(r), forProduct: r.product_id ? productName(r.product_id) : '', qty: consumptionQtyLabel(r), price: money(r.unit_price_snapshot) + (perGram ? '/g' : ''), subtotal: money(Number(r.qty) * Number(r.unit_price_snapshot || 0)), note: r.note || '' };
   });
   const prodRows = d.p.map(r => ({ name: productName(r.product_id), qty: num(r.qty), note: r.note || '' }));
   const shipRows = d.s.map(r => ({ name: productName(r.product_id), qty: num(r.qty), dest: r.destination || '', note: r.note || '' }));
@@ -994,7 +1374,7 @@ function buildDailyReportHTML(d) {
       </div>
 
       <div style="font-size:13px; font-weight:700; margin:14px 0 6px;">原材料消耗</div>
-      ${rptRows([{ label: '原材料', get: r => r.name }, { label: '数量', get: r => r.qty, num: true }, { label: '单价', get: r => r.price, num: true }, { label: '小计', get: r => r.subtotal, num: true }, { label: '备注', get: r => r.note }], consumeRows, '当日无消耗记录')}
+      ${rptRows([{ label: '原材料', get: r => r.name }, { label: '用于产品', get: r => r.forProduct }, { label: '数量', get: r => r.qty, num: true }, { label: '单价', get: r => r.price, num: true }, { label: '小计', get: r => r.subtotal, num: true }, { label: '备注', get: r => r.note }], consumeRows, '当日无消耗记录')}
 
       <div style="font-size:13px; font-weight:700; margin:14px 0 6px;">生产记录</div>
       ${rptRows([{ label: '产品', get: r => r.name }, { label: '数量', get: r => r.qty, num: true }, { label: '备注', get: r => r.note }], prodRows, '当日无生产记录')}
@@ -1033,7 +1413,7 @@ function exportDailyCSV() {
   if (!lastDaily) return;
   const d = lastDaily;
   const rows = [['类型', '品项', '数量', '单价/成本', '备注/发往', '时间']];
-  d.c.forEach(r => rows.push(['原材料消耗', consumptionName(r), consumptionQtyLabel(r), money(r.unit_price_snapshot), r.note || '', fmtTime(r.created_at)]));
+  d.c.forEach(r => rows.push(['原材料消耗', consumptionName(r) + (r.product_id ? ' → ' + productName(r.product_id) : ''), consumptionQtyLabel(r), money(r.unit_price_snapshot), r.note || '', fmtTime(r.created_at)]));
   d.p.forEach(r => rows.push(['生产', productName(r.product_id), num(r.qty), '', r.note || '', fmtTime(r.created_at)]));
   d.s.forEach(r => rows.push(['出货', productName(r.product_id), num(r.qty), '', r.destination || '', fmtTime(r.created_at)]));
   d.pu.forEach(r => { const m = materials.find(x => x.id === r.material_id); rows.push(['原材料入库', materialName(r.material_id), num(r.qty) + ' ' + (m ? m.unit : ''), money(r.unit_price), r.note || '', fmtTime(r.created_at)]); });
@@ -1420,6 +1800,9 @@ window.importSettingsXlsx = async function (tableKey, input) {
   initRoleGate();
   if (!initSupabase()) return;
   $('#dailyDate').value = todayStr();
+  restoreBatchDraft();
+  await probeConsumptionProductColumn();
   await Promise.all([loadMaterials(), loadProducts(), loadCashItems()]);
+  renderBatch();
   await Promise.all([renderRecent(), renderMaterialTable(), renderProductTable(), renderCashItemTable()]);
 })();

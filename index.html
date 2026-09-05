@@ -81,7 +81,8 @@
   <!-- ============ 记录 ============ -->
   <section id="tab-record" class="tab-panel active">
     <div class="flex gap-2 mb-3 overflow-x-auto">
-      <button data-sub="consume" class="subtab-btn active whitespace-nowrap px-3 py-1.5 rounded-full border border-teal-700 text-teal-700 text-sm" data-i18n="subConsume">原材料消耗</button>
+      <button data-sub="batch" class="subtab-btn active whitespace-nowrap px-3 py-1.5 rounded-full border border-teal-700 text-teal-700 text-sm" data-i18n="subBatch">做产品</button>
+      <button data-sub="consume" class="subtab-btn whitespace-nowrap px-3 py-1.5 rounded-full border border-teal-700 text-teal-700 text-sm" data-i18n="subConsume">原材料消耗</button>
       <button data-sub="produce" class="subtab-btn whitespace-nowrap px-3 py-1.5 rounded-full border border-teal-700 text-teal-700 text-sm" data-i18n="subProduce">生产记录</button>
       <button data-sub="ship" class="subtab-btn whitespace-nowrap px-3 py-1.5 rounded-full border border-teal-700 text-teal-700 text-sm" data-i18n="subShip">出货记录</button>
       <button data-sub="purchase" class="subtab-btn whitespace-nowrap px-3 py-1.5 rounded-full border border-teal-700 text-teal-700 text-sm" data-i18n="subPurchase">原材料入库</button>
@@ -90,8 +91,43 @@
 
     <div class="lg:grid lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)] lg:gap-5 lg:items-start">
     <div>
+    <!-- 今天做什么:选产品 -> 自动带出用料清单 -> 一边做一边填 -->
+    <form id="form-batch" class="record-form space-y-3 bg-white rounded-xl p-4 shadow-sm">
+      <div>
+        <label class="text-sm text-gray-500" data-i18n="batchPickProduct">今天做什么产品</label>
+        <select id="batchProduct" class="w-full mt-1 border rounded-lg px-3 py-2"></select>
+      </div>
+      <div class="flex items-end gap-2">
+        <div class="flex-1">
+          <label class="text-sm text-gray-500" data-i18n="batchYield">做出多少</label>
+          <input id="batchYield" type="number" step="any" min="0" class="w-full mt-1 border rounded-lg px-3 py-2" placeholder="0" />
+        </div>
+        <span id="batchYieldUnit" class="text-sm text-gray-500 pb-2.5 w-12"></span>
+      </div>
+      <p id="batchHint" class="text-xs text-gray-400"></p>
+      <div id="batchRows" class="space-y-2"></div>
+      <button type="button" id="batchAddRowBtn" class="w-full border border-teal-700 text-teal-700 rounded-lg py-2 text-sm" data-i18n="batchAddRow">+ 加别的原材料</button>
+      <div id="batchCostBox" class="hidden justify-between items-center text-sm border-t pt-2">
+        <span class="text-gray-500">材料成本</span>
+        <span id="batchCost" class="font-semibold text-teal-700">RM 0.00</span>
+      </div>
+      <div>
+        <label class="text-sm text-gray-500" data-i18n="lblPhoto">照片</label>
+        <input name="photo" type="file" accept="image/*" capture="environment" class="w-full mt-1 text-sm" />
+      </div>
+      <div>
+        <label class="text-sm text-gray-500" data-i18n="lblNote">备注</label>
+        <textarea name="note" class="w-full mt-1 border rounded-lg px-3 py-2" rows="2"></textarea>
+      </div>
+      <button type="submit" class="w-full bg-teal-700 text-white rounded-lg py-2.5 font-medium" data-i18n="btnSubmitBatch">提交(用料+产出一起记)</button>
+      <div class="flex gap-2">
+        <button type="button" id="batchClearBtn" class="flex-1 text-gray-400 text-xs py-1" data-i18n="batchClear">清空重填</button>
+        <button type="button" id="batchSaveRecipeBtn" class="hidden flex-1 text-teal-700 text-xs py-1 border border-teal-700 rounded-lg">存成标准配方</button>
+      </div>
+    </form>
+
     <!-- 消耗 -->
-    <form id="form-consume" class="record-form space-y-3 bg-white rounded-xl p-4 shadow-sm">
+    <form id="form-consume" class="record-form hidden space-y-3 bg-white rounded-xl p-4 shadow-sm">
       <div>
         <label class="text-sm text-gray-500" data-i18n="lblMaterial">原材料</label>
         <select name="consume_target" required class="w-full mt-1 border rounded-lg px-3 py-2"></select>
@@ -497,7 +533,7 @@
 
 <div id="printArea"></div>
 
-<script src="config.js?v=1788525576"></script>
-<script src="app.js?v=1788525576"></script>
+<script src="config.js?v=1788602967"></script>
+<script src="app.js?v=1788602967"></script>
 </body>
 </html>

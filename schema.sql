@@ -104,6 +104,7 @@ create table if not exists material_consumptions (
   id uuid primary key default gen_random_uuid(),
   material_id uuid references materials(id) on delete set null,
   cash_item_id uuid references cash_items(id) on delete set null,
+  product_id uuid references products(id) on delete set null, -- 这笔用料是为了做哪个产品(「今天做什么」页面记的会带上)
   qty numeric not null,     -- 克重类原材料=消耗的克数;否则按 unit 计
   unit_price_snapshot numeric not null default 0, -- 记录当时"每 1 个 qty 单位"的单价
                              -- (克重类=每克成本,否则=每 unit 成本),成本计算更准确
@@ -137,7 +138,11 @@ create index if not exists idx_mc_created on material_consumptions(created_at);
 create index if not exists idx_mp_created on material_purchases(created_at);
 create index if not exists idx_pr_created on production_records(created_at);
 create index if not exists idx_sr_created on shipment_records(created_at);
+-- 「今天做什么」页面用来回带"上次做这个产品用了哪些料"
+alter table material_consumptions add column if not exists product_id uuid references products(id) on delete set null;
+
 create index if not exists idx_mc_material on material_consumptions(material_id);
+create index if not exists idx_mc_product on material_consumptions(product_id);
 create index if not exists idx_pr_product on production_records(product_id);
 create index if not exists idx_sr_product on shipment_records(product_id);
 
