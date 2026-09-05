@@ -472,6 +472,7 @@ $all('.settings-tab-btn').forEach(btn => btn.addEventListener('click', () => {
   if (btn.dataset.settings === 'materials') renderMaterialTable();
   if (btn.dataset.settings === 'products') renderProductTable();
   if (btn.dataset.settings === 'cashitems') renderCashItemTable();
+  if (btn.dataset.settings === 'recipes') renderRecipeTable();
 }));
 
 // -------------------- 上传照片 --------------------
@@ -1675,6 +1676,155 @@ $('#cashItemForm').addEventListener('submit', async e => {
   e.target.reset(); e.target.id.value = ''; $('#cashItemCancelEdit').classList.add('hidden');
   await Promise.all([loadCashItems(), renderCashItemTable()]);
 });
+
+// -------------------- 设置页:产品配方(什么产品用什么材料)批量导入导出 --------------------
+// 这是「做产品」页的数据来源:配好之后员工选产品,用料清单直接列出来。
+// 用 Excel 维护:一个产品用几样材料就写几行,产品名重复写。
+
+const RECIPE_COLS = ['产品编号', '产品名称', '原材料编号', '原材料/品项名称', '每份用量'];
+
+// 表里的名字/编号 -> 系统里的原材料或现金品项。编号优先,其次名字(忽略大小写和首尾空格)
+function matchRecipeTarget(code, name) {
+  const norm = v => String(v == null ? '' : v).trim().toLowerCase();
+  const c = norm(code), n = norm(name);
+  if (c) {
+    const m = materials.find(x => norm(x.item_code) === c);
+    if (m) return 'm:' + m.id;
+  }
+  if (n) {
+    const m = materials.find(x => norm(x.name) === n);
+    if (m) return 'm:' + m.id;
+    const i = cashItems.find(x => norm(x.name) === n);
+    if (i) return 'c:' + i.id;
+  }
+  return null;
+}
+
+function matchRecipeProduct(code, name) {
+  const norm = v => String(v == null ? '' : v).trim().toLowerCase();
+  const c = norm(code), n = norm(name);
+  if (c) { const p = products.find(x => norm(x.item_code) === c); if (p) return p; }
+  if (n) { const p = products.find(x => norm(x.name) === n); if (p) return p; }
+  return null;
+}
+
+async function fetchAllRecipes() {
+  const { data, error } = await sb.from('product_recipe').select('*');
+  if (error) { toast('读取配方失败: ' + error.message, true); return []; }
+  return data || [];
+}
+
+async function renderRecipeTable() {
+  const rows = await fetchAllRecipes();
+  const byProduct = {};
+  rows.forEach(r => { (byProduct[r.product_id] = byProduct[r.product_id] || []).push(r); });
+  $('#recipeTable tbody').innerHTML = products.map(p => {
+    const list = byProduct[p.id] || [];
+    const names = list.map(r => {
+      const tgt = resolveTarget(r.cash_item_id ? 'c:' + r.cash_item_id : 'm:' + r.material_id);
+      if (!tgt) return '(已删除)';
+      const per = Number(r.qty_per_unit) || 0;
+      return tgt.obj.name + (per > 0 ? ` <span class="text-gray-400">${tgt.gram ? formatWeight(per) : num(per) + ' ' + tgt.unit}</span>` : '');
+    }).join('、');
+    return `<tr class="border-t align-top">
+      <td class="px-3 py-2 whitespace-nowrap">${p.item_code ? `<span class="text-gray-400">${p.item_code}</span> ` : ''}${p.name}</td>
+      <td class="px-3 py-2 text-center ${list.length ? '' : 'text-gray-300'}">${list.length || '—'}</td>
+      <td class="px-3 py-2 ${list.length ? '' : 'text-gray-300'}">${names || '还没设配方'}</td>
+    </tr>`;
+  }).join('') || '<tr><td class="px-3 py-3 text-gray-400" colspan="3">还没有产品</td></tr>';
+}
+
+// 导出:每个产品都出现:有配方的一行一样材料,没配方的留一行空的当填写模板
+window.exportRecipesXlsx = async function () {
+  const recipes = await fetchAllRecipes();
+  const byProduct = {};
+  recipes.forEach(r => { (byProduct[r.product_id] = byProduct[r.product_id] || []).push(r); });
+  const out = [];
+  products.forEach(p => {
+    const list = byProduct[p.id] || [];
+    if (!list.length) {
+      out.push({ '产品编号': p.item_code || '', '产品名称': p.name, '原材料编号': '', '原材料/品项名称': '', '每份用量': '' });
+      return;
+    }
+    list.forEach(r => {
+      const tgt = resolveTarget(r.cash_item_id ? 'c:' + r.cash_item_id : 'm:' + r.material_id);
+      out.push({
+        '产品编号': p.item_code || '',
+        '产品名称': p.name,
+        '原材料编号': tgt && tgt.kind === 'material' ? (tgt.obj.item_code || '') : '',
+        '原材料/品项名称': tgt ? tgt.obj.name : '(已删除)',
+        '每份用量': Number(r.qty_per_unit) || ''
+      });
+    });
+  });
+  const ws = XLSX.utils.json_to_sheet(out, { header: RECIPE_COLS });
+  ws['!cols'] = [{ wch: 12 }, { wch: 34 }, { wch: 12 }, { wch: 34 }, { wch: 12 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '产品配方');
+  XLSX.writeFile(wb, `产品配方_${todayStr()}.xlsx`);
+  toast('已导出');
+};
+
+// 导入:按产品分组,表里出现过的产品整份替换;没出现的不动
+window.importRecipesXlsx = async function (input) {
+  const file = input.files && input.files[0];
+  input.value = '';
+  if (!file) return;
+  try {
+    const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+    const raw = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' });
+    if (!raw.length) { toast('这个文件里没有数据', true); return; }
+
+    const groups = new Map();          // product_id -> [{material_id|cash_item_id, qty_per_unit}]
+    const unknownProducts = new Set();
+    const unknownMaterials = new Set();
+
+    raw.forEach(r => {
+      const p = matchRecipeProduct(r[RECIPE_COLS[0]], r[RECIPE_COLS[1]]);
+      const matName = String(r[RECIPE_COLS[3]] || '').trim();
+      const matCode = String(r[RECIPE_COLS[2]] || '').trim();
+      if (!p) {
+        if (String(r[RECIPE_COLS[1]] || '').trim()) unknownProducts.add(String(r[RECIPE_COLS[1]]).trim());
+        return;
+      }
+      if (!matName && !matCode) return;  // 模板里留白的那行:这个产品跳过,不动它原有配方
+      const target = matchRecipeTarget(matCode, matName);
+      if (!target) { unknownMaterials.add(matName || matCode); return; }
+      const tgt = resolveTarget(target);
+      if (!groups.has(p.id)) groups.set(p.id, []);
+      groups.get(p.id).push({
+        product_id: p.id,
+        material_id: tgt.kind === 'material' ? tgt.obj.id : null,
+        cash_item_id: tgt.kind === 'cash' ? tgt.obj.id : null,
+        qty_per_unit: Number(r[RECIPE_COLS[4]]) || 0
+      });
+    });
+
+    if (!groups.size) {
+      toast('没有一行能对上系统里的产品和材料,请检查名称是否一致', true);
+      if (unknownMaterials.size) alert('对不上的材料名:\n' + [...unknownMaterials].slice(0, 20).join('\n'));
+      return;
+    }
+
+    const lines = [...groups.values()].reduce((s, v) => s + v.length, 0);
+    let msg = `准备写入配方:\n${groups.size} 个产品,共 ${lines} 行用料。\n\n表里出现的产品,配方会整份换成表里的内容;\n表里没出现的产品不受影响。`;
+    if (unknownProducts.size) msg += `\n\n找不到的产品(跳过)${unknownProducts.size} 个:${[...unknownProducts].slice(0, 5).join('、')}${unknownProducts.size > 5 ? '…' : ''}`;
+    if (unknownMaterials.size) msg += `\n\n找不到的材料(跳过)${unknownMaterials.size} 个:${[...unknownMaterials].slice(0, 5).join('、')}${unknownMaterials.size > 5 ? '…' : ''}`;
+    if (!confirm(msg + '\n\n确定吗?')) return;
+
+    for (const [productId, rows] of groups) {
+      const { error: delErr } = await sb.from('product_recipe').delete().eq('product_id', productId);
+      if (delErr) throw delErr;
+      const { error: insErr } = await sb.from('product_recipe').insert(rows);
+      if (insErr) throw insErr;
+    }
+    toast(`已写入 ${groups.size} 个产品的配方`);
+    await renderRecipeTable();
+    if (unknownMaterials.size) alert('这些材料名在系统里找不到,已跳过:\n' + [...unknownMaterials].slice(0, 30).join('\n') + '\n\n请确认名称跟「原材料库/现金采购品项」里完全一致,或先把它们加进去。');
+  } catch (err) {
+    toast('导入失败: ' + err.message, true);
+  }
+};
 
 // -------------------- 设置页:导出/导入 Excel(批量编辑) --------------------
 // 每张表的列定义:key=数据库字段,label=Excel 表头,type=写回时怎么转换

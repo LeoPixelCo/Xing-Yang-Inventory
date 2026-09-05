@@ -408,10 +408,11 @@
 
   <!-- ============ 设置 ============ -->
   <section id="tab-settings" class="tab-panel">
-    <div class="flex gap-2 mb-3">
-      <button data-settings="materials" class="settings-tab-btn active px-3 py-1.5 rounded-full border border-teal-700 text-teal-700 text-sm">原材料库</button>
-      <button data-settings="products" class="settings-tab-btn px-3 py-1.5 rounded-full border border-teal-700 text-teal-700 text-sm">产品库</button>
+    <div class="flex gap-2 mb-3 overflow-x-auto">
+      <button data-settings="materials" class="settings-tab-btn active px-3 py-1.5 rounded-full border border-teal-700 text-teal-700 text-sm whitespace-nowrap">原材料库</button>
+      <button data-settings="products" class="settings-tab-btn px-3 py-1.5 rounded-full border border-teal-700 text-teal-700 text-sm whitespace-nowrap">产品库</button>
       <button data-settings="cashitems" class="settings-tab-btn px-3 py-1.5 rounded-full border border-teal-700 text-teal-700 text-sm whitespace-nowrap">现金采购品项</button>
+      <button data-settings="recipes" class="settings-tab-btn px-3 py-1.5 rounded-full border border-teal-700 text-teal-700 text-sm whitespace-nowrap">产品配方</button>
     </div>
 
     <div id="settings-materials" class="settings-panel">
@@ -506,6 +507,27 @@
         </table>
       </div>
     </div>
+    <div id="settings-recipes" class="settings-panel hidden">
+      <div class="flex gap-2 mb-3 lg:max-w-xl">
+        <button type="button" class="flex-1 border border-teal-700 text-teal-700 rounded-lg py-2 text-sm" onclick="exportRecipesXlsx()">导出 Excel</button>
+        <button type="button" class="flex-1 border border-teal-700 text-teal-700 rounded-lg py-2 text-sm" onclick="document.getElementById('importRecipesFile').click()">导入 Excel</button>
+        <input type="file" id="importRecipesFile" accept=".xlsx,.xls" class="hidden" onchange="importRecipesXlsx(this)" />
+      </div>
+      <p class="text-xs text-gray-400 mb-3 lg:max-w-3xl">
+        配方 = 这个产品要用到哪些原材料。设好之后,员工在「记录 → 做产品」里选中产品,用料清单就自动列出来,不用自己翻。<br />
+        导出的 Excel 里每个产品都有,没配方的会留一行空的,直接在「原材料/品项名称」那列填名字就行(一个产品用几样就写几行,产品名重复写)。<br />
+        「每份用量」可以留空 —— 留空就只列出材料让员工自己填数量;填了的话,员工填「做出多少」时会自动算出建议用量。<br />
+        导入时:表里出现过的产品,配方会被整个换成表里的内容;表里没出现的产品不受影响。
+      </p>
+      <div class="overflow-x-auto bg-white rounded-xl shadow-sm lg:inline-block lg:max-w-full lg:align-top">
+        <table class="text-sm" id="recipeTable">
+          <thead class="bg-gray-100 text-gray-500">
+            <tr><th class="text-left px-3 py-2 whitespace-nowrap">产品</th><th class="px-3 py-2 whitespace-nowrap">材料数</th><th class="text-left px-3 py-2">用料</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
   </section>
 
 </main>
@@ -533,7 +555,7 @@
 
 <div id="printArea"></div>
 
-<script src="config.js?v=1788602967"></script>
-<script src="app.js?v=1788602967"></script>
+<script src="config.js?v=1788603310"></script>
+<script src="app.js?v=1788603310"></script>
 </body>
 </html>
